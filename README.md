@@ -2,9 +2,7 @@
 
 The code of the bachelor thesis *Τεχνικές Συντήρησης Ευρετηρίων για Διανυσματικά Δεδομένα*, Konstantinos Bitakos, Department of Digital Systems, University of Piraeus, 2026.
 
-The thesis compares ways of maintaining an IVF (inverted file) vector index while vectors are inserted and deleted. The code includes an IVF index written in Python and NumPy, the maintenance policies of SPFresh, DeDrift and Quake, a periodic full rebuild, a contextual bandit policy, and a scoring procedure. The scoring compares every policy at a fixed recall of 0.9, on queries no policy has seen, with query cost and maintenance work priced in one unit measured on Faiss.
-
-The repository contains the code and the result files behind every number in the thesis. It is a snapshot for examination and will not be developed further.
+The thesis compares ways of maintaining an IVF (inverted file) vector index while vectors are inserted and deleted. The code includes an IVF index, the maintenance policies of SPFresh, DeDrift and Quake, a periodic full rebuild, a contextual bandit policy, and a scoring procedure, all written in Python and NumPy. The scoring compares every policy at a fixed recall of 0.9, on queries no policy has seen, with query cost and maintenance work priced in one unit measured on Faiss.
 
 ## Documentation
 
@@ -27,7 +25,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-`requirements.txt` pins the library versions that were used. A different version of scikit-learn can produce a different k-means, and then the numbers will differ from the stored results, even though every run is deterministic given its seed.
+`requirements.txt` pins the library versions that were used. A different version of scikit-learn can produce different k-means, and then the numbers will differ from the stored results, even though every run is deterministic given its seed.
 
 ## Data
 
@@ -35,7 +33,8 @@ pip install -r requirements.txt
 python scripts/download_datasets.py --dataset all
 ```
 
-This downloads SIFT1M (about 0.5 GB) and GIST1M (about 5.5 GB) into `data/`. The first run of each seed also computes the workload cluster labels and stores them in `data/workload_labels/`.
+This downloads SIFT1M and GIST1M into `data/`. The first run of each seed also computes the workload cluster labels and stores them in `data/workload_labels/`.
+These are large datasets, so about 6 GB of free disk space is needed to download them.
 
 ## Reproducing the results
 
@@ -60,8 +59,6 @@ The stored K curves are in `results/raw/diag_2809/`, and the spread and alpha fi
 ```bash
 python scripts/final_sweep.py --dataset sift1m --seeds 42 --maintainers no_op lire_lite bandit --no-figures --output results/raw/example.csv
 ```
-
-A GIST1M run of one policy on one seed takes from minutes to a few hours, depending on the policy. Each result row carries a fingerprint of the code, the machine and the parameters, and `--resume` reruns only the runs that are missing or were produced by different code.
 
 ## Layout
 
