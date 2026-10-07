@@ -1,0 +1,5 @@
+sift1m sift_s42 42 no_op,global_rebuild,lire_lite,dedrift_lazy,dedrift_split,dedrift_hybrid,cost_driven_quake,cost_driven_quake_tau50,bandit
+sift1m sift_s1 1 no_op,global_rebuild,lire_lite,dedrift_lazy,dedrift_split,dedrift_hybrid,cost_driven_quake,cost_driven_quake_tau50,bandit
+sift1m sift_s7 7 no_op,global_rebuild,lire_lite,dedrift_lazy,dedrift_split,dedrift_hybrid,cost_driven_quake,cost_driven_quake_tau50,bandit
+sift1m sift_s13 13 no_op,global_rebuild,lire_lite,dedrift_lazy,dedrift_split,dedrift_hybrid,cost_driven_quake,cost_driven_quake_tau50,bandit
+sift1m sift_s23 23 no_op,global_rebuild,lire_lite,dedrift_lazy,dedrift_split,dedrift_hybrid,cost_driven_quake,cost_driven_quake_tau50,bandit

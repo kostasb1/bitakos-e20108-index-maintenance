@@ -1,0 +1,32 @@
+{
+  "746ad4efc6309e2e": {
+    "code_hash": "b638d1d4413fb932212ec977128d1d91",
+    "cost_model_hash": "not read",
+    "git_commit": "788df69",
+    "git_dirty": false,
+    "machine": "DESKTOP-3PK5P49|AMD64|py3.12.9|np1.26.4|sk1.6.1|faiss1.13.2",
+    "maintainer": "global_rebuild_at_bandit_k",
+    "params": {
+      "bootstrap": 5000,
+      "build_ratio": 4.0,
+      "cap": 50000,
+      "dataset": "sift1m",
+      "dedrift_n_largest": null,
+      "delete_csf": 0.0,
+      "eval_queries": 400,
+      "hot_fraction": 0.1,
+      "hot_prob": 0.8,
+      "initial_fraction": 0.2,
+      "max_t": 100,
+      "measure_ops": 120000,
+      "n_ops": 60000,
+      "query_ratio": 8,
+      "target_avg": 100,
+      "width": 3.0,
+      "window": 8,
+      "workload": "staple"
+    },
+    "scoreboard_hash": "4d1f1f9e509925d2b5d354578516cd44",
+    "threads": "OMP_NUM_THREADS=1,MKL_NUM_THREADS=1,OPENBLAS_NUM_THREADS=1"
+  }
+}

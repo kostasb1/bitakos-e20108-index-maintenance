@@ -1,0 +1,4 @@
+control,ref,reading,vs_ref,ci_lo,ci_hi,below,seeds,per_seed
+global_rebuild_at_bandit_k,bandit,query_cost,-11.204990999548237,-25.430122899371376,5.7337618077399455,4,5,+2.1 -21.1 -1.4 -6.5 -25.7
+global_rebuild_at_bandit_k,bandit,query_cost_mean,-6.882068654652052,-10.127261888881932,-3.5196955130461505,5,5,-4.1 -7.3 -6.4 -5.4 -11.0
+global_rebuild_at_bandit_k,bandit,work_calibrated,14022.772192511487,12923.709337470487,15214.584288804019,0,5,+13713.5 +12667.6 +14210.9 +14954.9 +14685.6

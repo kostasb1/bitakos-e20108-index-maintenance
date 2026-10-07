@@ -1,0 +1,9 @@
+# datasets, downloaded by scripts/download_datasets.py, and the caches derived from them
+data/
+# Python and tool caches
+__pycache__/
+.ruff_cache/
+.venv/
+# generated figures
+scripts/figures/
+results/figures/

@@ -1,0 +1,11 @@
+model:
+  alpha: 275.52215056500773
+  beta: 0.0
+  gamma: 0.0
+  intercept: 0.0
+  r_squared: 0.9436886615485265
+machine_info:
+  platform: Windows-11-10.0.26200-SP0
+  processor: AMD64 Family 25 Model 33 Stepping 0, AuthenticAMD
+  python_version: 3.12.9
+  numpy_version: 1.26.4
