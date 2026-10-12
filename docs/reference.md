@@ -12,7 +12,7 @@ Every module, class and function of the code, generated from the docstrings, in 
 - **Support**: [`src/provenance.py`](#srcprovenancepy), [`src/__init__.py`](#src__init__py), [`src/bandit/__init__.py`](#srcbandit__init__py), [`src/maintainers/__init__.py`](#srcmaintainers__init__py)
 - **Scripts**: [`scripts/final_sweep.py`](#scriptsfinal_sweeppy), [`scripts/analyse_final.py`](#scriptsanalyse_finalpy), [`scripts/calibrate_query_cost.py`](#scriptscalibrate_query_costpy), [`scripts/control_rebuild_at_k.py`](#scriptscontrol_rebuild_at_kpy), [`scripts/k_curve.py`](#scriptsk_curvepy), [`scripts/rebuild_noise.py`](#scriptsrebuild_noisepy), [`scripts/dedrift_split_trace.py`](#scriptsdedrift_split_tracepy), [`scripts/measure_split_alpha.py`](#scriptsmeasure_split_alphapy), [`scripts/make_figures.py`](#scriptsmake_figurespy), [`scripts/download_datasets.py`](#scriptsdownload_datasetspy)
 
-318 classes and functions in 35 files.
+319 classes and functions in 35 files.
 
 ## Core
 
@@ -4442,7 +4442,7 @@ Build the index, split a range of partitions one at a time, and report alpha.
 
 ### scripts/make_figures.py
 
-365 lines.
+373 lines.
 
 The figures of the thesis, in English and Greek, written to scripts/figures.
 
@@ -4466,9 +4466,19 @@ checked against the code.
 | `NAMES` | `{'en': {'global_rebuild': 'Global rebuild', 'lire_lite': 'LIRE', 'd...` |
 | `RTEXT` | `{'en': {'change': 'change in query cost against no maintenance, %',...` |
 
+#### `decimal`
+
+*function, lines 35 to 37*
+
+```python
+def decimal(lang, text)
+```
+
+Write a decimal with a comma in the Greek figures, as the Greek text does.
+
 #### `fig_ivf`
 
-*function, lines 68 to 98*
+*function, lines 74 to 104*
 
 ```python
 def fig_ivf(lang)
@@ -4478,7 +4488,7 @@ Draw a two dimensional IVF example, partitions, centroids and the two a query op
 
 #### `fig_pipeline`
 
-*function, lines 101 to 133*
+*function, lines 107 to 139*
 
 ```python
 def fig_pipeline(lang)
@@ -4488,7 +4498,7 @@ Draw the pipeline of one experiment, from the dataset to the scoring.
 
 #### `fig_retention`
 
-*function, lines 136 to 159*
+*function, lines 142 to 165*
 
 ```python
 def fig_retention(lang)
@@ -4498,7 +4508,7 @@ Draw the retention window, each batch expiring 50 time steps after it arrives.
 
 #### `fig_list_price`
 
-*function, lines 162 to 182*
+*function, lines 168 to 190*
 
 ```python
 def fig_list_price(lang)
@@ -4508,7 +4518,7 @@ Plot the Faiss price per vector against list length, for both datasets.
 
 #### `fig_quake_threshold`
 
-*function, lines 185 to 208*
+*function, lines 193 to 216*
 
 ```python
 def fig_quake_threshold(lang)
@@ -4518,7 +4528,7 @@ Plot the smallest access fraction at which Quake splits a partition of each size
 
 #### `runs`
 
-*function, lines 238 to 244*
+*function, lines 246 to 252*
 
 ```python
 def runs(sweep, tag)
@@ -4528,7 +4538,7 @@ Read the result rows of one set of runs and add the change against no maintenanc
 
 #### `summary`
 
-*function, lines 247 to 250*
+*function, lines 255 to 258*
 
 ```python
 def summary(sweep_dir, dataset)
@@ -4538,7 +4548,7 @@ Read the ranking table that scripts/analyse_final.py wrote for one dataset.
 
 #### `_dotpanel`
 
-*function, lines 253 to 271*
+*function, lines 261 to 279*
 
 ```python
 def _dotpanel(ax, series, lang, show_labels)
@@ -4548,7 +4558,7 @@ Draw per seed changes as dots and the mean with its interval, one row per policy
 
 #### `fig_results_change`
 
-*function, lines 274 to 291*
+*function, lines 282 to 299*
 
 ```python
 def fig_results_change(lang)
@@ -4558,7 +4568,7 @@ Plot the change in query cost against no maintenance, SIFT at both sizes and GIS
 
 #### `fig_results_frontier`
 
-*function, lines 294 to 315*
+*function, lines 302 to 323*
 
 ```python
 def fig_results_frontier(lang)
@@ -4568,7 +4578,7 @@ Plot the change in query cost against maintenance work, per seed and on average.
 
 #### `fig_k_curve`
 
-*function, lines 318 to 343*
+*function, lines 326 to 351*
 
 ```python
 def fig_k_curve(lang)

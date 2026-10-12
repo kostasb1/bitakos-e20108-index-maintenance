@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 import matplotlib
+import matplotlib.ticker
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -30,6 +31,11 @@ from src.cost_model import lambda_from_prices  # noqa: E402
 OUT = HERE / "figures"
 OUT.mkdir(exist_ok=True)
 CAL = yaml.safe_load((ROOT / "results/cost_model/query_cost_calibration.yaml").read_text())
+
+def decimal(lang, text):
+    """Write a decimal with a comma in the Greek figures, as the Greek text does."""
+    return text.replace(".", ",") if lang == "el" else text
+
 
 plt.rcParams.update({"font.family": "Arial", "font.size": 10, "axes.spines.top": False,
                      "axes.spines.right": False, "savefig.dpi": 200})
@@ -176,6 +182,8 @@ def fig_list_price(lang):
     ax.set_xlabel(t["len"])
     ax.set_ylabel(t["pervec"])
     ax.axhline(1.0, color="#999999", lw=0.6)
+    ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(
+        lambda v, _: decimal(lang, f"{v:.1f}")))
     ax.legend(frameon=False)
     fig.tight_layout()
     fig.savefig(OUT / f"list_price_{lang}.png")
@@ -334,7 +342,7 @@ def fig_k_curve(lang):
     ax.axhline(0, color="black", lw=0.6, ls=":")
     ax.set_xscale("log")
     ax.set_xticks([1, 1.5, 2, 3, 4.5, 8.5])
-    ax.set_xticklabels(["1", "1.5", "2", "3", "4.5", "8.5"])
+    ax.set_xticklabels([decimal(lang, s) for s in ("1", "1.5", "2", "3", "4.5", "8.5")])
     ax.set_xlabel(t["kmult"])
     ax.set_ylabel(t["kchange"])
     ax.legend(frameon=False, fontsize=8.5)
