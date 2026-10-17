@@ -1,15 +1,4 @@
-"""The three DeDrift strategies, Baranchuk et al., ICCV 2023, section 5.1.
-
-The paper applies them on a schedule, every one to six months of collected content. Here they use
-the trigger of the global rebuild, an update once 2.5 percent of the live vectors have changed, so
-DeDrift and a full rebuild differ only in what they do and not in how often.
-
-Lazy moves every centroid to the mean of the vectors currently assigned to it, with no
-reassignment. Split collects the vectors of the k largest clusters into B1, sets k2 to the ceiling
-of the size of B1 over mu, the median cluster size of the whole index, collects the k2 minus k
-smallest clusters into B2, runs k-means with k2 centroids on B1 and B2 together and replaces those
-k2 clusters, so the total cluster count stays the same. Hybrid runs Lazy and then Split.
-"""
+"""The three DeDrift strategies, Baranchuk et al., ICCV 2023, section 5.1."""
 
 from __future__ import annotations
 
@@ -23,15 +12,12 @@ from src.types import MaintenanceReport
 
 VARIANTS = ("lazy", "split", "hybrid")
 
-# the number of largest clusters collected into B1, as a fraction of the partition count. DeDrift
-# section 5.1 uses k = 8 at K = 4096 and k = 64 at K = 16384, so k over K is 0.20 and 0.39
-# percent, a fraction of the index rather than a count. 0.20 percent is the lower end of that
-# range. at the partition counts used here it rounds to one cluster per pass
+# share of K taken as the largest clusters, DeDrift section 5.1
 DEDRIFT_N_LARGEST_FRACTION: float = 0.0020
 
 
 class DeDriftMaintainer(Maintainer):
-    """DeDrift Lazy, Split or Hybrid, run whenever a set share of the index has changed."""
+    """DeDrift Lazy, Split or Hybrid."""
 
     name = "dedrift"
 
@@ -44,10 +30,7 @@ class DeDriftMaintainer(Maintainer):
         check_interval: int = MAINTENANCE_CHECK_INTERVAL,
         seed: int = 42,
     ) -> None:
-        """Create the policy for one variant, "lazy", "split" or "hybrid".
-
-        `n_largest` fixes the number of largest clusters in B1 and overrides `n_largest_fraction`.
-        """
+        """Create the policy for one variant, "lazy", "split" or "hybrid"."""
         super().__init__(check_interval=check_interval)
         if variant not in VARIANTS:
             raise ValueError(f"variant must be one of {VARIANTS}, got {variant!r}")
@@ -60,12 +43,12 @@ class DeDriftMaintainer(Maintainer):
         self._last_update_total = 0
 
     def start(self, index: IVFIndex, step: int) -> None:
-        """Start counting updates from the start of the stream, as the global rebuild does."""
+        """Start counting updates at the start of the stream."""
         super().start(index, step)
         self._last_update_total = index._total_inserts + index._total_deletes
 
     def should_maintain(self, index: IVFIndex, step: int) -> bool:
-        """Return True once the updates since the last step reach the set share of live vectors."""
+        """Act once enough of the vectors have changed."""
         if not index.partitions:
             return False
         total = index._total_inserts + index._total_deletes
@@ -95,10 +78,7 @@ class DeDriftMaintainer(Maintainer):
         return max(1, round(self.n_largest_fraction * n_partitions))
 
     def _lazy(self, index: IVFIndex, report: MaintenanceReport) -> None:
-        """Move each centroid to the mean of its live vectors, without reassigning any vector.
-
-        The work is one read of every live vector.
-        """
+        """Move each centroid to the mean of its vectors."""
         for pid in list(index.partition_ids()):
             p = index.partitions[pid]
             if p.size() == 0:
@@ -108,19 +88,16 @@ class DeDriftMaintainer(Maintainer):
             report.num_centroids_recomputed += 1
 
     def _split(self, index: IVFIndex, report: MaintenanceReport) -> None:
-        """Recluster the largest clusters together with the smallest ones, keeping K constant."""
+        """Recluster the largest and smallest clusters, keeping K."""
         from sklearn.cluster import KMeans
 
-        # every partition counts, empty ones included. mu is "the median cluster size of the
-        # whole IVF", so an empty cluster counts as size zero in the median, and it belongs in B2
-        # too, since B2 supplies free cluster slots and an empty cluster is exactly that
+        # empty partitions count in the median
         sizes = {pid: p.size() for pid, p in index.partitions.items()}
         if len(sizes) < 2:
             return
         median_size = float(np.median(list(sizes.values())))
         if median_size <= 0:
-            # more than half the index is empty, so k2 is undefined. DeDrift assumes a populated
-            # index and does not cover this case, so the step is skipped
+            # mostly empty index, skip
             return
 
         by_size = sorted(sizes.items(), key=lambda kv: kv[1], reverse=True)
@@ -129,7 +106,6 @@ class DeDriftMaintainer(Maintainer):
         n_b1 = sum(sizes[pid] for pid in largest)
 
         k2 = int(np.ceil(n_b1 / median_size))
-        # k2 must exceed k for this to be a repartition, and cannot use more clusters than exist
         k2 = max(k + 1, k2)
         k2 = min(k2, len(by_size))
         n_smallest = k2 - k
@@ -137,7 +113,7 @@ class DeDriftMaintainer(Maintainer):
             return
         smallest = [pid for pid, _ in by_size[-n_smallest:] if pid not in set(largest)]
         if len(largest) + len(smallest) != k2:
-            # the largest and smallest sets overlap, the index is too small to repartition
+            # sets overlap, index too small
             return
 
         involved = largest + smallest
@@ -153,7 +129,7 @@ class DeDriftMaintainer(Maintainer):
             return
 
         matrix = np.vstack(blocks).astype(np.float32)
-        # the vectors are charged one read, and the k-means distances are counted separately below
+        # one read per vector, k-means counted below
         report.vectors_processed += len(all_ids)
 
         km = KMeans(n_clusters=k2, random_state=self.seed, n_init=3)
@@ -165,14 +141,12 @@ class DeDriftMaintainer(Maintainer):
         for vid, vec, lbl in zip(all_ids, matrix, labels, strict=True):
             children[int(lbl)].add(vid, vec)
         children = [c for c in children if c.size() > 0]
-        # the result must have exactly k2 clusters to keep K constant. scikit-learn moves empty
-        # clusters, so this should never fail, and the check makes sure it is noticed if it does
+        # k-means must return exactly k2 clusters
         assert len(children) == k2, f"DeDrift split kept {len(children)} clusters, expected {k2}"
         if not children:
             return
 
-        # join the involved clusters into one and split that into the k-means result, which keeps
-        # the map from vectors to partitions consistent through the swap
+        # swap the clusters in one step
         merged = merge_partitions(parts)
         index.apply_merge(involved, merged)
         merged_pid = sorted(index.partition_ids())[-1]

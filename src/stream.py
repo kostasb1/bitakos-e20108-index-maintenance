@@ -1,18 +1,4 @@
-"""The retention window stream that every reported number is measured on.
-
-A run starts from a grown starting index (`src/staple.py`) and continues with a Big ANN style
-sliding window. Arrivals walk the 64 workload clusters in a seeded random order, with a Gaussian
-spread of `width` clusters around the current position, and every batch expires `max_t // 2` time
-steps after it arrived, so one region drains while another fills. The starting index itself
-expires first, over the same lag. Every update is followed by `query_ratio` routed queries from a
-pool that concentrates on one region of the query space, and those queries are the access signal
-the Quake and bandit policies read.
-
-The order of the random draws matters. Every policy starts from a copy of the same starting index
-and continues its generator, so the cluster walk, the inserts and the expiry schedule are the same
-for every policy. The second draw in `run_stream` is a shuffle whose result is never read, kept
-because it advances the generator, and removing it would change every arrival.
-"""
+"""The retention window stream that every reported number is measured on."""
 
 from __future__ import annotations
 
@@ -34,34 +20,21 @@ from src.metrics import (
 )
 from src.staple import N_WORKLOAD_CLUSTERS, Staple, sliding_window_cohorts
 
-# the points of the run, as fractions, at which the scoring is read besides the start and the
-# end. the main result is the reading at the end, chosen before any run was seen, and the mean over
-# these points and the end is reported beside it
+# points where the score is read
 CHECKPOINT_FRACTIONS: tuple[float, ...] = (0.25, 0.5, 0.75)
 
-# the routed queries are served at the nprobe that meets this recall, the same target as the
-# scoring, measured again every ROUTE_CALIBRATION_INTERVAL updates on a fixed sample of the routed
-# pool. at a fixed nprobe a finer index always looks cheaper, because the recall it loses is never
-# priced, so the access signal would carry exactly the bias the fixed recall scoring removes. Quake
-# picks nprobe per query to meet a recall target, and this is the same idea per window
+# routed queries use the nprobe that meets this recall
 ROUTE_TARGET_RECALL: float = 0.9
 ROUTE_CALIBRATION_QUERIES: int = 100
 
-# the recall targets read beside the main 0.9, and the tag each one carries in a reading and in a
-# result row, so a ranking can be checked on either side of the target
+# extra recall targets
 EXTRA_TARGETS: dict[float, str] = {0.8: "r80", 0.95: "r95"}
 ROUTE_CALIBRATION_INTERVAL: int = MAINTENANCE_CHECK_INTERVAL
 
 
 def recall_matched_nprobe(index, queries: np.ndarray, start: int,
                           target: float = ROUTE_TARGET_RECALL, k: int = DEFAULT_K) -> int:
-    """Return the smallest nprobe at which mean recall at `k` on `queries` meets `target`.
-
-    The search starts from `start`, the previous window's value, and moves one step at a time,
-    since the index changes little between windows. The ground truth is exact over the live
-    vectors. Nothing here records access, so finding the nprobe cannot change the signal it is
-    found for.
-    """
+    """Smallest nprobe that meets the target recall."""
     gt = compute_live_ground_truth(index, queries, k)
     n_parts = len(index.partitions)
     if gt.shape[1] == 0 or n_parts == 0:
@@ -88,11 +61,7 @@ def recall_matched_nprobe(index, queries: np.ndarray, start: int,
 
 def query_pool(queries: np.ndarray, seed: int, hot_fraction: float, hot_prob: float,
                eval_queries: int, pool_size: int = 4000) -> tuple[np.ndarray, np.ndarray]:
-    """Return a routed query pool and a scoring sample drawn from that same pool.
-
-    The sample is not held out, so a policy that learns from access would be scored on queries it
-    learned from. The reported runs use `split_query_pools` instead. Not used by the reported runs.
-    """
+    """Return a routed query pool and a scoring sample drawn from that same pool."""
     qrng = np.random.default_rng(seed + 7)
     n_hot = max(1, int(len(queries) * hot_fraction))
     fh = qrng.random(pool_size) < hot_prob
@@ -104,13 +73,7 @@ def query_pool(queries: np.ndarray, seed: int, hot_fraction: float, hot_prob: fl
 
 
 def query_region(queries: np.ndarray, seed: int, fraction: float) -> tuple[int, np.ndarray]:
-    """Return the region the concentrated queries come from, the `fraction` nearest to one query.
-
-    The centre query is drawn from the seed, so where the concentration falls also varies across
-    seeds. Quake section 7.1 and Ada-IVF section 5.1.2 both concentrate their skewed workloads
-    spatially in this way. Returns the centre and the region, nearest first, ties broken by query
-    id.
-    """
+    """The query ids near one query, where most queries come from."""
     n = max(1, int(len(queries) * fraction))
     centre = int(np.random.default_rng(seed + 19).integers(len(queries)))
     d = np.linalg.norm(queries.astype(np.float64) - queries[centre].astype(np.float64), axis=1)
@@ -119,15 +82,7 @@ def query_region(queries: np.ndarray, seed: int, fraction: float) -> tuple[int, 
 
 def split_query_pools(queries: np.ndarray, seed: int, hot_fraction: float, hot_prob: float,
                       eval_queries: int, pool_size: int = 4000):
-    """Return the routed pool, a sample of it, and a held out sample that is never routed.
-
-    The query ids are split in two halves, the region and the rest alike. The stream routes a
-    mixture drawn from the first half, `hot_prob` of it from that half of the region and the rest
-    from the whole half. The scoring reads a mixture drawn the same way from the second half,
-    which the stream never routes, so no policy is scored on a query it learned from, and both
-    halves concentrate on the same region. The sample of the routed pool is kept so the gap
-    between the two can be reported for every policy.
-    """
+    """Split the queries into routed and held-out."""
     rng = np.random.default_rng(seed + 13)
     _, region = query_region(queries, seed, hot_fraction)
     inside = rng.permutation(region)
@@ -138,7 +93,7 @@ def split_query_pools(queries: np.ndarray, seed: int, hot_fraction: float, hot_p
         halves.append((region_h, np.concatenate([region_h, outside[h::2]])))
 
     def draw(half, n, r):
-        """Draw `n` query ids from one half, `hot_prob` of them from its part of the region."""
+        """Draw `n` query ids, most from the region."""
         region_h, all_h = half
         from_region = r.random(n) < hot_prob
         return np.where(from_region, region_h[r.integers(0, len(region_h), n)],
@@ -155,21 +110,14 @@ def split_query_pools(queries: np.ndarray, seed: int, hot_fraction: float, hot_p
 
 
 def measure(index, eval_q: np.ndarray, t: int, extra_targets: bool = True) -> dict:
-    """Read the scoring at time step `t` and return it as a dictionary.
-
-    The main reading is the cost at recall 0.9, at the nprobe that meets it, since a cost at a
-    fixed nprobe can be gamed by splitting. With `extra_targets` the cost at 0.8 and 0.95 is read
-    too, on the same ground truth. Also returns the raw recall at the default nprobe, the cost
-    with tombstones scanned, the partition count and the live and stored sizes, and, when a price
-    list exists, the same costs priced in Faiss time.
-    """
+    """Read the scoring at time step `t` and return it as a dictionary."""
     targets = (0.9, *EXTRA_TARGETS) if extra_targets else (0.9,)
     readings = costs_at_target_recalls(index, eval_q, k=DEFAULT_K, targets=targets)
     extra = [(t, tag) for t, tag in EXTRA_TARGETS.items() if t in readings]
     c, npr, rec, std = readings[0.9]
     raw = recall_at_k_live(index, eval_q, k=DEFAULT_K, nprobe=DEFAULT_NPROBE)
     sizes = np.array([p.size() for p in index.partitions.values()])
-    # the same reading with tombstones scanned, the SPFresh delete model, at the same nprobe
+    # SPFresh delete model
     cs = stored_cost_at(index, eval_q, npr) if len(sizes) else 0.0
     r = dict(t=t, cost=c, cost_stored=cs, nprobe=npr, achieved=rec, recall_std=std,
              raw_recall=raw,
@@ -177,8 +125,7 @@ def measure(index, eval_q: np.ndarray, t: int, extra_targets: bool = True) -> di
              stored=int(sum(p.total_size() for p in index.partitions.values())))
     for target, tag in extra:
         r[f"cost_{tag}"], r[f"nprobe_{tag}"] = readings[target][0], readings[target][1]
-    # the same readings priced in Faiss time, each probed list at its length. the reported query
-    # cost is built from these, and the counts above stay as the raw readings
+    # readings priced in Faiss time
     if has_price_list(index.dim):
         r["cost_priced"] = priced_cost_at(index, eval_q, npr)
         r["cost_priced_stored"] = priced_cost_at(index, eval_q, npr, stored=True)
@@ -201,16 +148,7 @@ def run_stream(
     log: Callable[[dict], None] | None = None,
     served_q: np.ndarray | None = None,
 ) -> dict:
-    """Run one policy over the retention window, starting from a copy of `staple0`.
-
-    Each of the `max_t` time steps inserts about `measure_ops // max_t` vectors around the current
-    workload cluster and deletes the vectors due to expire. Every update is followed by
-    `query_ratio` routed queries and a chance for the policy to act, and the routing nprobe is
-    recalibrated every 1,000 updates. Returns the readings at t = 0, at the checkpoints and at the
-    end, the policy, the final index and the counts of the stream. `log` is called with each
-    reading as it is taken, and with `served_q` every reading is repeated on that sample under a
-    served_ prefix.
-    """
+    """Run one policy over the retention window, starting from a copy of `staple0`."""
     st = copy.deepcopy(staple0)
     index, members, cursor = st.index, st.members, st.cursor
 
@@ -219,7 +157,7 @@ def run_stream(
     _order = np.concatenate([np.ones(measure_ops // 2, np.int8),
                              np.zeros(measure_ops - measure_ops // 2, np.int8)])
     rng.shuffle(_order)
-    # the routed queries come from their own generator, so routing can never change the arrivals
+    # own generator for routed queries
     qrng = np.random.default_rng(seed + 7)
 
     per_t = max(1, measure_ops // max_t)
@@ -236,7 +174,7 @@ def run_stream(
     rows = [reading(0)]
     if log:
         log(rows[-1])
-    # a fixed sample of the routed pool, from its own generator so no other draw changes
+    # fixed sample, own generator
     calib_q = qpool[np.random.default_rng(seed + 17).choice(
         len(qpool), size=min(ROUTE_CALIBRATION_QUERIES, len(qpool)), replace=False)]
     route_nprobe = recall_matched_nprobe(index, calib_q, DEFAULT_NPROBE)
@@ -254,8 +192,7 @@ def run_stream(
 
     maint.start(index, st.step)
     n_ins = n_del = 0
-    # every insert is routed to its nearest centroid, K comparisons, which nothing else charges.
-    # it grows with K, so a policy that splits pays it on every insert
+    # cost of routing inserts
     insert_routing = 0
     t1 = time.perf_counter()
     check = {int(max_t * f) for f in CHECKPOINT_FRACTIONS}
@@ -282,7 +219,7 @@ def run_stream(
             for _ in range(query_ratio):
                 index.route(qpool[int(qrng.integers(0, len(qpool)))], route_nprobe)
             maint.maybe_maintain(index, st.step + n_ins + n_del)
-        # every batch expires a fixed lag later, nothing stays forever
+        # every batch expires after a fixed lag
         expire = t + max(1, max_t // 2)
         if expire < max_t:
             due.setdefault(expire, []).extend(batch)

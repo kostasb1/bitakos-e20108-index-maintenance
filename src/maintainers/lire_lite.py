@@ -1,12 +1,4 @@
-"""LIRE, the update protocol of SPFresh (SOSP 2023), in memory.
-
-One pass does three things in this order. It removes empty partitions. It splits every partition
-whose stored length, tombstones included, exceeds the split limit, compacting it first and
-skipping the split if it then holds fewer than the limit. Then it merges every partition of at most
-the merge limit live vectors into the nearest of 64 neighbours that still fits. Each split and
-merge ends with the reassignment checks of SPFresh section 3.3. The same class grows the starting
-index of every policy, see `src/staple.py`.
-"""
+"""LIRE, the update protocol of SPFresh (SOSP 2023), in memory."""
 
 from __future__ import annotations
 
@@ -32,7 +24,7 @@ from src.types import MaintenanceReport
 
 
 class LireLiteMaintainer(Maintainer):
-    """Keep every partition between a merge limit and a split limit, as SPFresh LIRE does."""
+    """LIRE, keep partitions between the merge and split limits."""
 
     name = "lire_lite"
 
@@ -47,11 +39,7 @@ class LireLiteMaintainer(Maintainer):
         enable_compact: bool = True,
         seed: int = 42,
     ) -> None:
-        """Create the policy with its split and merge limits.
-
-        `boundary_top_k` is the number of neighbouring partitions the reassignment considers, and
-        `merge_candidates` the number of neighbours a merge looks through for a partner.
-        """
+        """Create the policy with its split and merge limits."""
         super().__init__(check_interval=check_interval)
         self.max_partition_size = max_partition_size
         self.min_partition_size = min_partition_size
@@ -62,29 +50,20 @@ class LireLiteMaintainer(Maintainer):
         self.seed = seed
 
     def should_maintain(self, index: IVFIndex, step: int) -> bool:
-        """Return True if any partition is too long, small enough to merge, or empty.
-
-        The split check reads the stored length, which still includes the vectors deleted since
-        the last compaction, because SPFresh checks the length of the posting, SPFresh section 4.1.
-        """
+        """Return True if any partition is too long, small enough to merge, or empty."""
         for p in index.partitions.values():
             if p.total_size() > self.max_partition_size:
                 return True
-            # at or below the threshold, as in the SPFresh implementation
+            # at or below the threshold, as in SPFresh
             if self.enable_merge and 0 < p.size() <= self.min_partition_size:
                 return True
-            # an empty partition is removed rather than merged, so it triggers a pass even when
-            # merging is switched off
+            # empty partitions are removed, even with merging off
             if p.is_empty():
                 return True
         return False
 
     def _collect(self, index: IVFIndex, pid: int, report: MaintenanceReport) -> bool:
-        """Compact a partition if it has tombstones, and return whether it did.
-
-        The work is the stored length, counted in compaction_reads, which the reported work leaves
-        out.
-        """
+        """Compact a partition if it has tombstones, and return whether it did."""
         partition = index.partitions[pid]
         if not (self.enable_compact and partition.tombstones):
             return False
@@ -98,11 +77,11 @@ class LireLiteMaintainer(Maintainer):
         report = MaintenanceReport(triggered=True)
         touched: set[int] = set()
 
-        # first, so an empty partition is never a split neighbour or a merge target
+        # remove empty partitions first
         report.num_collected += len(collect_empty_partitions(index))
 
         def _length(p):
-            """The stored length, tombstones included, which the split limit is checked against."""
+            """Stored length, tombstones included."""
             return p.total_size()
 
         oversized = [
@@ -117,9 +96,7 @@ class LireLiteMaintainer(Maintainer):
             partition = index.partitions[pid]
 
             if self._collect(index, pid, report):
-                # SPFresh section 4.2.1, the dead vectors of a long partition are removed first and
-                # the limit checked again, and a partition that then fits is not split. it fits
-                # only strictly below the limit, as in the SPFresh implementation
+                # compact first, split only if still too long
                 touched.add(pid)
                 if partition.size() < self.max_partition_size:
                     continue
@@ -139,12 +116,7 @@ class LireLiteMaintainer(Maintainer):
             new_pids = sorted(index.partition_ids())[-len(children):]
             touched.update(new_pids)
 
-            # SPFresh section 3.3, the two necessary conditions decide which vectors are checked,
-            # with the deleted centroid as the reference. a checked vector moves to the nearest
-            # centroid in the local set, where SPFresh searches the whole index, and a partition
-            # a reassignment pushes over the limit is split on the next pass rather than at once.
-            # a whole index search was measured to halve the misplaced vectors at six times the
-            # work with no consistent effect on cost
+            # SPFresh reassignment conditions, local search
             moves, examined = reassign_lire_after_split(
                 index, partition.centroid, new_pids, neighbors, meter=report)
             report.num_reassigned += moves
@@ -163,15 +135,10 @@ class LireLiteMaintainer(Maintainer):
                     continue
 
                 partition = index.partitions[pid]
-                # the list above is built once, and a partition can grow before its turn, by an
-                # earlier merge or a reassignment, so the size is checked again here, as SPFresh
-                # recounts it when the merge job runs
+                # size may have changed, check again
                 if not 0 < partition.size() <= self.min_partition_size:
                     continue
-                # SPFresh section 3.2, the merge walks the nearest partitions in order and takes
-                # the first whose combined length still fits under the limit. the fit is the live
-                # length of this partition plus the stored length of the neighbour, since SPFresh
-                # records a length on each append and resets it only when the posting is rewritten
+                # first neighbour that fits
                 candidates = nearest_partitions_in_order(
                     index, partition.centroid, self.merge_candidates, exclude={pid},
                     meter=report)
@@ -185,21 +152,18 @@ class LireLiteMaintainer(Maintainer):
                     continue
                 nbr = index.partitions[nbr_pid]
 
-                # SPFresh section 3.2, delete the shorter partition with its centroid and append
-                # its vectors to the other one, which keeps its own centroid
+                # merge the shorter partition into the other
                 short_pid, long_pid = (
                     (pid, nbr_pid) if partition.size() <= nbr.size() else (nbr_pid, pid))
                 short_centroid = index.partitions[short_pid].centroid.copy()
-                # SPFresh writes the merged partition with the live vectors of both, so the dead
-                # vectors of both are removed here
+                # drop dead vectors of both
                 self._collect(index, short_pid, report)
                 self._collect(index, long_pid, report)
-                # read before the merge, which empties the shorter partition into the other
+                # read before the merge
                 short_size = index.partitions[short_pid].size()
                 long_size = index.partitions[long_pid].size()
                 moved_ids = merge_into_survivor(index, short_pid, long_pid)
-                # both partitions are charged, since SPFresh rewrites both, and every policy that
-                # merges charges the same way, so merge work is comparable between them
+                # both partitions are charged
                 report.vectors_processed += short_size + long_size
                 report.num_merges += 1
                 touched.add(long_pid)

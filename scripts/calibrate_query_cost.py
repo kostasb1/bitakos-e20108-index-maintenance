@@ -1,28 +1,4 @@
-"""Measure the prices of the cost unit, on Faiss IndexIVFFlat rather than on the Python index.
-
-    python scripts/calibrate_query_cost.py
-    python scripts/calibrate_query_cost.py --lambda-only
-
-A query ranks every centroid, then opens nprobe lists and scans the vectors in them. The Python
-index cannot price either step, because the cost of each of its calls is mostly interpreter
-overhead, so both are measured on Faiss IndexIVFFlat, one query at a time on one thread, as Quake
-measures. The full search and the centroid ranking alone are timed, and their difference is the
-list scan.
-
-The list scan is measured on a design that separates list length from list count. The index
-always holds N_REF distinct vectors, the size of the indexes the prices are applied to, and every
-list holds exactly m of them, so a query at nprobe n scans exactly n times m. For each m the time
-to open and scan one more list, t(m), is the slope of scan time against n. The query cost prices
-each probed list at t(its length), in units of one scan distance, the time per vector over long
-lists, see `src/calibration.py`. The centroid ranking is priced per centroid, from flat indexes of
-growing size.
-
-The script also prices maintenance work by kind, small and large k-means and a vector read or
-copy, and writes the scan cost curves the Quake and bandit policies read, so they price actions
-in the unit they are scored in. Every price is the median of five independent calibrations, with
-the range stored beside it, in results/cost_model/query_cost_calibration.yaml. With --lambda-only
-the curves are rebuilt from the stored prices and nothing is measured.
-"""
+"""Measure the prices of the cost unit on Faiss."""
 
 from __future__ import annotations
 
@@ -43,10 +19,9 @@ from src.cost_model import lambda_from_prices, save_profiled_cost_model  # noqa:
 from src.dataset import load_gist1m, load_sift1m  # noqa: E402
 
 CALIBRATION_PATH = COST_MODEL_DIR / "query_cost_calibration.yaml"
-# the starting index holds 50,000 live vectors and the stream grows it to about 60,000
+# 50,000 live vectors at the start, about 60,000 at the end
 N_REF, NQ, K_NN = 51_200, 300, 10
-# list lengths the policies reach and either side of them. below 25 the list count is capped, so
-# those points hold fewer than N_REF vectors in all, 10,240 at 5 and 20,480 at 10
+# list lengths to measure, around the sizes the policies reach
 LIST_SIZES = (0, 5, 10, 25, 50, 100, 200, 400, 800, 1600)
 MAX_LISTS = 2048
 NPROBES = (1, 2, 4, 8, 16, 32, 64)
@@ -54,12 +29,7 @@ CENTROID_COUNTS = (128, 256, 512, 1024, 2048)
 
 
 def calibrate(base: np.ndarray, queries: np.ndarray, seed: int = 0) -> dict:
-    """Measure the list price curve and the centroid price once, and return them in scan distances.
-
-    Each measurement times whole loops of single query calls, one loop for the full search and
-    one for the centroid ranking alone, so the Python overhead of each call cancels in the
-    difference. The minimum over five loops is kept, since an interruption only ever adds time.
-    """
+    """Measure the list prices and the centroid price."""
     import time
 
     import faiss
@@ -71,7 +41,7 @@ def calibrate(base: np.ndarray, queries: np.ndarray, seed: int = 0) -> dict:
     d = pool.shape[1]
 
     def best_ns(call) -> float:
-        """Return the fastest of five timed loops over the queries, in nanoseconds per query."""
+        """Fastest of five timed loops, ns per query."""
         best = float("inf")
         for _ in range(5):
             t0 = time.perf_counter()
@@ -80,8 +50,7 @@ def calibrate(base: np.ndarray, queries: np.ndarray, seed: int = 0) -> dict:
             best = min(best, (time.perf_counter() - t0) * 1e9 / NQ)
         return best
 
-    # every list holds exactly m distinct vectors, so nprobe n scans n times m, and the slope of
-    # scan time against n is the time to open and scan one list of m
+    # time per list is the slope of scan time against nprobe
     list_ns = []
     for m in LIST_SIZES:
         n_lists = MAX_LISTS if m == 0 else min(MAX_LISTS, N_REF // m)
@@ -106,7 +75,7 @@ def calibrate(base: np.ndarray, queries: np.ndarray, seed: int = 0) -> dict:
         list_ns.append(float(np.polyfit(np.array(ns, dtype=float), np.array(ys), 1)[0]))
     unit = scan_unit_ns(LIST_SIZES, list_ns)
 
-    # the centroid ranking, one pass over K centroids, priced per centroid
+    # price of ranking one centroid
     cent = []
     for k in CENTROID_COUNTS:
         flat = faiss.IndexFlatL2(d)
@@ -114,10 +83,7 @@ def calibrate(base: np.ndarray, queries: np.ndarray, seed: int = 0) -> dict:
         cent.append(best_ns(lambda q, fl=flat: fl.search(q, 16)))
     per_centroid = float(np.polyfit(np.array(CENTROID_COUNTS, dtype=float), np.array(cent),
                                     1)[0])
-    # list_overhead is a diagnostic that nothing prices with, the single fixed cost per list a
-    # straight line through the curve implies. it is kept because its range crosses zero on both
-    # datasets, which shows no such constant exists. ns_per_vector_faiss is the unit, the time per
-    # vector over lists of at least 200 vectors
+    # list_overhead is only a diagnostic, ns_per_vector_faiss is the unit
     return {"list_sizes": [int(m) for m in LIST_SIZES],
             "list_prices": [float(t / unit) for t in list_ns],
             "list_overhead": float(per_list_overhead_ns(LIST_SIZES, list_ns) / unit),
@@ -126,14 +92,7 @@ def calibrate(base: np.ndarray, queries: np.ndarray, seed: int = 0) -> dict:
 
 
 def calibrate_work(base: np.ndarray, ns_per_scan_distance: float) -> dict:
-    """Measure the price of each kind of maintenance operation, in scan distances.
-
-    Faiss k-means runs a fixed number of Lloyd iterations, so its time divides exactly by
-    iterations times points times centroids. It is measured at two shapes, because batching gains
-    very differently. A split or a DeDrift step clusters a few hundred points into a handful of
-    centroids, and a rebuild clusters the whole index into hundreds. A vector read or copy is timed
-    on contiguous blocks the size of a partition, since a partition is stored as one block.
-    """
+    """Measure the price of each kind of maintenance operation, in scan distances."""
     import time
 
     import faiss
@@ -143,7 +102,7 @@ def calibrate_work(base: np.ndarray, ns_per_scan_distance: float) -> dict:
     d = base.shape[1]
 
     def kmeans_ns(n: int, k: int, niter: int, reps: int) -> float:
-        """Return the fastest time per distance of a Faiss k-means of n points into k centres."""
+        """Fastest time per distance of a Faiss k-means."""
         best = float("inf")
         for r in range(reps):
             x = np.ascontiguousarray(base[rng.choice(len(base), n, replace=False)].astype("float32"))
@@ -177,10 +136,7 @@ REPEATS = 5
 
 
 def main() -> None:
-    """Calibrate both datasets REPEATS times, store the medians and ranges, and write the curves.
-
-    With --lambda-only the curves are rebuilt from the stored prices and nothing is measured.
-    """
+    """Calibrate both datasets several times and store the medians."""
     if "--lambda-only" in sys.argv:
         stored = yaml.safe_load(CALIBRATION_PATH.read_text())
         for dim, entry in stored.items():
@@ -206,7 +162,7 @@ def main() -> None:
                 "ns_per_vector_faiss")
         med = {k: float(np.median([r[k] for r in runs])) for k in keys}
         spread = {k: [float(min(r[k] for r in runs)), float(max(r[k] for r in runs))] for k in keys}
-        # the curve is taken point by point, each list length with its own median and range
+        # one median and range per list length
         curves = np.array([r["list_prices"] for r in runs])
         med["list_sizes"] = list(runs[0]["list_sizes"])
         med["list_prices"] = [float(v) for v in np.median(curves, axis=0)]
@@ -222,7 +178,7 @@ def main() -> None:
 
 
 def write_lambda(dim: int, med: dict) -> None:
-    """Write the scan cost curve for `dim` dimensions, which is the Faiss list price curve itself."""
+    """Write the scan cost curve for `dim` dimensions."""
     path = COST_MODEL_DIR / f"profiled_lambda_dim{dim}.yaml"
     model = lambda_from_prices(med)
     save_profiled_cost_model(model, path)

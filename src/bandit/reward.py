@@ -1,10 +1,4 @@
-"""The reward of the bandit policy, built on the total Quake cost C.
-
-`index_cost` is C, the sum over partitions of min(1, A) times lambda(size), plus lambda_c(K). The
-bandit reads C before and after an action, and `compute_reward` turns the change into a reward in
-[-1, 1], after subtracting a weighted action cost and adding two small terms, one for drift a
-centroid refresh closed and one for tombstones an action removed.
-"""
+"""The reward of the bandit policy, built on the total Quake cost C."""
 
 from __future__ import annotations
 
@@ -15,7 +9,7 @@ from src.partition import Partition
 
 @dataclass
 class PartitionSnapshot:
-    """The state of a partition just before an action, kept to compare with the state after it."""
+    """State of a partition before an action."""
 
     size: int
     access: float
@@ -26,28 +20,13 @@ class PartitionSnapshot:
 
 
 def partition_latency_cost(partition: Partition, cost_model=None) -> float:
-    """Return what a partition costs the workload, access count times lambda(size).
-
-    This is Quake equation 1. With no cost model, lambda is the live size.
-    """
+    """Return what a partition costs the workload, access count times lambda(size)."""
     lam = cost_model.scan_latency(partition.size()) if cost_model else float(partition.size())
     return partition.access_count * lam
 
 
 def index_cost(index, cost_model=None, nprobe: int = 10) -> float:
-    """Return the total Quake cost C, the sum of A times lambda(size) plus lambda_c(K).
-
-    A is the share of routed queries that scanned the partition, so the partition term and the
-    centroid term are both per query and can be added. The centroid term is the delta O of Quake
-    equations 4 and 5, since every query compares itself with all K centroids. With no cost model,
-    lambda is the vector count.
-
-    The bandit scores an action by the change in this total. Scoring only the acted partition
-    would miss two effects. The reassignment after a split moves vectors and their access into the
-    children from neighbouring partitions, so the children would be charged for what they gained
-    while the neighbours were never credited for what they lost. And without the centroid term a
-    merge could never lower the cost, and nothing would oppose a split.
-    """
+    """Return the total Quake cost C, the sum of A times lambda(size) plus lambda_c(K)."""
     lam = cost_model.scan_latency if cost_model else float
     lam_c = cost_model.centroid_latency if cost_model else float
     queries = index.query_count(nprobe)
@@ -71,11 +50,7 @@ def snapshot(partition: Partition, cost_model=None) -> PartitionSnapshot:
 
 
 def combine_snapshots(snaps: list[PartitionSnapshot]) -> PartitionSnapshot:
-    """Combine the snapshots of the partitions a merge consumes into one.
-
-    Costs are added, which is the true combined cost whatever the shape of lambda. Drift and access
-    are averaged, weighted by size.
-    """
+    """Combine the snapshots of the partitions a merge consumes into one."""
     total_live = sum(s.size for s in snaps)
     if total_live > 0:
         drift = sum(s.drift * s.size for s in snaps) / total_live
@@ -108,16 +83,7 @@ def compute_reward(
     clip: float | None = None,
     drift_credit: bool = True,
 ) -> float:
-    """Return the reward of an action.
-
-    The reward is the cost reduction, minus `w_cost` times the action cost, plus `w_drift_guard`
-    times the drift closed over `drift_scale`, plus `w_compact` times the drop in the tombstone
-    share. With `delta_index_cost`, which the bandit passes, the cost reduction is the change in
-    `index_cost` across the action divided by `cost_scale`. Otherwise it is the relative change in
-    the acted partitions' own cost. The drift is divided by a fixed scale rather than by its value
-    before the action, so closing a small drift does not score the same as closing a large one.
-    `clip` bounds the reward, which the analysis of LinUCB assumes.
-    """
+    """Return the reward of an action."""
     if not after_partitions:
         return 0.0
 
@@ -130,10 +96,7 @@ def compute_reward(
         cost_after = sum(partition_latency_cost(p, cost_model) for p in after_partitions)
         cost_reduction = (cost_before - cost_after) / max(cost_before, 1e-6)
 
-    # drift is the distance from a centroid to the mean of its own members, so the before and
-    # after values are comparable only while the members stay the same. a split or a merge changes
-    # them, and crediting the difference there made merges look profitable while they raised the
-    # cost, so the caller turns this term off for those actions
+    # drift credit only when the members stay the same
     if drift_credit:
         drift_after = sum(p.centroid_drift() for p in after_partitions) / n
         drift_guard = (before.drift - drift_after) / max(drift_scale, 1e-6)

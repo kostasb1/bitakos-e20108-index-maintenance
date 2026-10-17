@@ -1,4 +1,4 @@
-"""The six numbers that describe one partition to the bandit, see `extract_context`."""
+"""Context features of a partition for the bandit."""
 
 from __future__ import annotations
 
@@ -10,9 +10,7 @@ from src.types import IndexStats
 
 CONTEXT_DIM: int = 6
 
-# the upper bound of each feature. the LinUCB analysis assumes the context has a bounded norm, and
-# without these bounds the size features could grow without limit for a partition far over the
-# threshold or far over the mean. access and the tombstone share are fractions already
+# upper bound of each feature
 _CLAMP: np.ndarray = np.array([2.0, 2.0, 1.0, 1.0, 4.0, 1.0], dtype=np.float64)
 
 
@@ -26,19 +24,10 @@ def extract_context(
     drift_scale: float | None = None,
     queries: float | None = None,
 ) -> np.ndarray:
-    """Return the context vector of a partition, six features each kept within a fixed range.
-
-    The features are the size over the split threshold `size_cap`, the centroid drift over
-    `drift_scale`, the access fraction A, the share of tombstoned vectors, the size over the mean
-    partition size, and a constant 1. A is the share of routed queries that scanned the
-    partition, as in Quake section 4.1, the quantity the cost model ranks on. `queries` is the
-    routed query count, and when it is not given it is estimated as `total_access` over `nprobe`.
-    `total_access` has no default, because A cannot be computed from one partition alone.
-    """
+    """The six context features of a partition."""
     size = partition.size()
     drift = partition.centroid_drift()
-    # drift is a distance, about 13 on SIFT and about 1 on GIST, so it is divided by the drift
-    # limit to put both datasets on one scale, as the size is divided by its threshold
+    # drift divided by the drift limit
     if drift_scale is not None:
         drift = drift / max(drift_scale, 1e-9)
     total = partition.total_size()

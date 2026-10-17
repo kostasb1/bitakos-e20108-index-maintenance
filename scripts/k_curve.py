@@ -1,19 +1,4 @@
-"""The query cost of fresh builds at several partition counts K, with the build spread at each.
-
-    python scripts/k_curve.py --dataset gist1m --seed 42
-
-The ranking of the policies depends on the starting partition count. This measures the property of
-the data behind that. The live vectors at the end of the no maintenance run of a seed are built
-fresh with exact k-means at K0 times each multiple, K0 being the partition count of the starting
-index, each in `--builds` row orders, and scored exactly as the main runs score, on their 400 held
-out queries and on a larger held out sample drawn the same way. The multiples were fixed before any
-run, 2 is the half size check, 3 and 4.5 bracket the bandit and Quake on GIST, and 8.5 reaches
-Quake at tau 50.
-
-The gain a fixed K policy would see from a larger starting K, and the gain a policy that grows K
-gets from the K it reaches, can both be read off this curve. Every index here is a fresh build, so
-it says nothing about maintenance. Results go to results/raw/k_curve_<dataset>_s<seed>.csv.
-"""
+"""Query cost of fresh builds at several partition counts."""
 from __future__ import annotations
 
 import os
@@ -44,7 +29,7 @@ MULTIPLES = (1.0, 1.5, 2.0, 3.0, 4.5, 8.5)
 
 
 def main() -> None:
-    """Run the no maintenance stream, then build and score its final vectors at every multiple of K0."""
+    """Run the no maintenance stream, then score fresh builds at several K."""
     p = argparse.ArgumentParser()
     p.add_argument("--dataset", choices=["sift1m", "gist1m"], default="gist1m")
     p.add_argument("--seed", type=int, default=42)

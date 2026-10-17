@@ -1,4 +1,4 @@
-"""The parts of the bandit policy, its context features, its LinUCB learner and its reward."""
+"""Parts of the bandit policy."""
 
 from src.bandit.context import CONTEXT_DIM, extract_context
 from src.bandit.linucb import LinUCBAgent

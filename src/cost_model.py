@@ -1,19 +1,4 @@
-"""The scan cost curve lambda(s) that the Quake and bandit policies decide with.
-
-lambda(s) is the cost of scanning one partition of s vectors, in nanoseconds, and lambda_c(K) is
-the cost of ranking K centroids. A policy uses them to price an action before taking it. The
-Quake policy prices every candidate action with them, and the reward of the bandit is the change
-in the total Quake cost built on them.
-
-The stored curves, `results/cost_model/profiled_lambda_dim128.yaml` and `..._dim960.yaml`, are
-built by `lambda_from_prices` from the same Faiss price list the scoring uses, and
-`scripts/calibrate_query_cost.py` writes them. A policy therefore decides in the unit it is scored
-in. The profiling and fitting functions below measure the scan of this Python code instead, and
-no reported run uses them.
-
-The scoring never calls anything here. A policy that carries a cost model is making a claim about
-what a query costs, and the scoring is the independent check of whether that claim paid off.
-"""
+"""The scan cost curve lambda(s) that the Quake and bandit policies decide with."""
 
 from __future__ import annotations
 
@@ -35,11 +20,7 @@ def benchmark_partition_scan(
     n_trials: int = 20,
     seed: int = 42,
 ) -> pd.DataFrame:
-    """Time the partition scan on random partitions of each size.
-
-    Returns one row per trial with the size and the wall time in nanoseconds. Not used by the
-    reported runs.
-    """
+    """Time the partition scan on random partitions of each size."""
     if sizes is None:
         sizes = [50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000]
 
@@ -64,11 +45,7 @@ def benchmark_partition_scan(
 
 
 def fit_cost_model(timings_df: pd.DataFrame) -> CostModel:
-    """Fit latency as alpha times size through the origin, and return it as a linear model.
-
-    The line is forced through the origin because a free intercept comes out negative over these
-    sizes, which would predict zero cost for small partitions. Drift and access get zero weight.
-    """
+    """Fit latency as alpha times size. Not used in the reported runs."""
     x_feat = timings_df[["size"]].values
     y = timings_df["wall_time_ns"].values
 
@@ -91,37 +68,22 @@ def fit_cost_model(timings_df: pd.DataFrame) -> CostModel:
 
 @dataclass
 class ProfiledCostModel:
-    """lambda(s) as a table of measured points, interpolated between them, as in Quake section 4.1.
-
-    Quake does not assume a formula for the scan cost, it measures it. `sizes` and `latencies`
-    are the measured points. On the stored curves the latencies are the Faiss time to open and
-    scan a list, so `dispatch_ns` and `probe_ns` are zero and `centroid_ns` prices one centroid
-    comparison, see `lambda_from_prices`.
-
-    The two other terms exist for curves measured on the Python scan. `dispatch_ns` is the part of
-    a call that does not depend on the number of vectors, which in Python is the interpreter
-    starting the numpy operations, about 4.3 microseconds at both dimensions. It is subtracted
-    because a compiled engine such as Quake does not pay it, and leaving it in would make every
-    split look expensive. `probe_ns` is a fixed cost added to every scan of a non empty partition.
-    """
+    """lambda(s) as a table of measured points, interpolated."""
 
     sizes: np.ndarray
     latencies: np.ndarray
     r_squared: float = 1.0
-    # zero for a curve built without a dispatch measurement, which then prices the raw curve
+    # zero without a dispatch measurement
     dispatch_ns: float = 0.0
-    # the cost of opening one partition beyond its vectors. zero on the stored curves, where the
-    # opening is already part of every measured point
+    # cost of opening a partition
     probe_ns: float = 0.0
-    # one centroid comparison as a fraction of one partition vector comparison, used when
-    # centroid_ns is not set
+    # centroid comparison as a fraction of a vector comparison
     centroid_ratio: float = 1.0
-    # the cost of one centroid comparison in nanoseconds. when set, the centroid scan is priced
-    # linearly in K, as the scoring prices it
+    # centroid comparison in ns
     centroid_ns: float = 0.0
 
     def _raw(self, s: float) -> float:
-        """Return the measured curve at size `s`, extended past the last point along its last segment."""
+        """Measured curve at size `s`, extended past the last point."""
         if s >= self.sizes[-1]:
             slope = ((self.latencies[-1] - self.latencies[-2])
                      / (self.sizes[-1] - self.sizes[-2]))
@@ -129,27 +91,18 @@ class ProfiledCostModel:
         return float(np.interp(s, self.sizes, self.latencies))
 
     def scan_latency(self, size: int) -> float:
-        """Return lambda(size), the cost of scanning one partition of `size` vectors.
-
-        Below the smallest measured size the first point is scaled down linearly. A curve whose
-        first point is at size 0, as the Faiss curve is, charges that point for an empty partition,
-        since the router does probe empty partitions.
-        """
+        """Return lambda(size), the cost of scanning one partition of `size` vectors."""
         s = float(max(0, size))
         if s <= self.sizes[0]:
             first = float(self.latencies[0]) - self.dispatch_ns
             base = first * (s / self.sizes[0]) if self.sizes[0] > 0 else first
         else:
             base = self._raw(s) - self.dispatch_ns
-        # the fixed cost of opening the partition, paid whenever it is probed at all
+        # fixed cost of opening the partition
         return base + (self.probe_ns if s > 0 else 0.0)
 
     def centroid_latency(self, n_centroids: int) -> float:
-        """Return lambda_c(K), the cost of comparing a query with `n_centroids` centroids.
-
-        This is the top level scan every query performs, the delta O term of Quake equations 4 and
-        5. It is one pass over the centroids, so it pays no per partition cost.
-        """
+        """Return lambda_c(K), the cost of comparing a query with `n_centroids` centroids."""
         s = float(max(0, n_centroids))
         if self.centroid_ns > 0.0:
             return self.centroid_ns * s
@@ -161,7 +114,7 @@ class ProfiledCostModel:
         return self.centroid_ratio * base
 
     def predict_latency(self, size: int, drift: float = 0.0, access: int = 0) -> float:
-        """Return the scan cost of a partition of `size` vectors. Drift and access are ignored."""
+        """Scan cost of a partition of `size` vectors."""
         return self.scan_latency(size)
 
     def to_dict(self) -> dict:
@@ -191,16 +144,7 @@ class ProfiledCostModel:
 
 
 def lambda_from_prices(entry: dict) -> ProfiledCostModel:
-    """Build lambda(s) as the Faiss time to open and scan a list of s vectors.
-
-    `entry` is the price list of one dimension from
-    `results/cost_model/query_cost_calibration.yaml`, the same curve the scoring prices every
-    probed list with, so a policy prices an action in the unit it is scored in. Quake measures
-    lambda on the engine that serves its queries, and the closest equivalent here is Faiss
-    IndexIVFFlat rather than the Python scan. Opening a list is already inside the curve, so no
-    dispatch or per partition term is added, and a centroid comparison is priced as the scoring
-    prices it.
-    """
+    """Build lambda(s) as the Faiss time to open and scan a list of s vectors."""
     unit = float(entry["ns_per_vector_faiss"])
     return ProfiledCostModel(
         sizes=np.asarray(entry["list_sizes"], dtype=float),
@@ -219,14 +163,7 @@ def profile_scan_latency(
     seed: int = 42,
     window_ns: float = 2e6,
 ) -> ProfiledCostModel:
-    """Measure lambda(s) of the Python scan. Not used by the reported runs.
-
-    Each sample times a run of `inner` scans and divides, so the time per scan is large compared
-    with the clock resolution and the loop overhead. Each size then takes the minimum over trials,
-    because interruptions only ever add time, so the minimum is the least disturbed sample. With
-    `inner` unset the repeat count is chosen per size to fill a window of `window_ns`, so small
-    partitions are repeated often and large ones are not repeated needlessly.
-    """
+    """Measure lambda(s) of the Python scan. Not used by the reported runs."""
     if sizes is None:
         sizes = [25, 50, 100, 200, 400, 800, 1600, 3200, 6400]
 
@@ -245,7 +182,7 @@ def _min_batched_scan_ns(
     rng: np.random.Generator, size: int, dim: int,
     n_trials: int, inner: int | None, window_ns: float,
 ) -> float:
-    """Return the minimum over trials of the mean time of a batch of scans, for one size."""
+    """Fastest mean scan time for one size."""
     import time
 
     matrix = rng.random((size, dim), dtype=np.float32)
@@ -276,12 +213,7 @@ def profile_dispatch_ns(
     window_ns: float = 2e6,
     reference_size: int = 25,
 ) -> float:
-    """Measure the part of one scan call that does not depend on the number of vectors.
-
-    The scan is timed at one vector and at `reference_size` vectors, and the line through the two
-    is extended back to zero vectors. The random generator is seeded apart from
-    `profile_scan_latency`, so adding this measurement leaves the curve unchanged.
-    """
+    """Measure the part of one scan call that does not depend on the number of vectors."""
     rng = np.random.default_rng(seed + 1)
     one = _min_batched_scan_ns(rng, 1, dim, n_trials, None, window_ns)
     ref = _min_batched_scan_ns(rng, reference_size, dim, n_trials, None, window_ns)
@@ -290,11 +222,7 @@ def profile_dispatch_ns(
 
 
 def fit_profiled_cost_model(timings_df: pd.DataFrame) -> ProfiledCostModel:
-    """Build lambda(s) from benchmark timings, the median time at each size.
-
-    The median is used because it is less affected by an occasional interrupted trial than the
-    mean.
-    """
+    """Build lambda(s) from benchmark timings, the median time at each size."""
     g = timings_df.groupby("size")["wall_time_ns"].median().sort_index()
     return ProfiledCostModel(
         sizes=np.asarray(g.index, dtype=float),
@@ -310,10 +238,7 @@ def benchmark_cost_model_full(
     n_trials: int = 20,
     seed: int = 42,
 ) -> pd.DataFrame:
-    """Time the scan while also varying drift and access, to test whether they affect latency.
-
-    Not used by the reported runs.
-    """
+    """Time the scan while varying drift and access. Not used in the reported runs."""
     import time
 
     if sizes is None:
@@ -355,12 +280,7 @@ def benchmark_cost_model_full(
 
 
 def fit_cost_model_full(timings_df: pd.DataFrame) -> tuple[CostModel, dict]:
-    """Fit latency on size, drift and access by least squares, with the significance of each.
-
-    Returns the fitted linear model and a dictionary with the estimate, standard error, t
-    statistic and p value of every coefficient, and the R squared of the full and the size only
-    fit.
-    """
+    """Fit latency on size, drift and access. Not used in the reported runs."""
     from scipy import stats
 
     feature_names = ["size", "drift", "access"]
@@ -432,11 +352,7 @@ def load_cost_model(path: Path) -> CostModel:
 
 
 def save_profiled_cost_model(model: ProfiledCostModel, path: Path) -> None:
-    """Write a measured scan cost curve and a description of the machine to a YAML file.
-
-    A timed curve differs from one measurement to the next, so it is measured once and stored, as
-    Quake does, and every run reads the stored curve. That keeps a run determined by its seed.
-    """
+    """Write a scan cost curve to YAML."""
     payload = {
         "model": model.to_dict(),
         "machine_info": _machine_info(),
@@ -452,7 +368,7 @@ def load_profiled_cost_model(path: Path) -> ProfiledCostModel:
 
 
 def _machine_info() -> dict[str, str]:
-    """Return the platform, processor, Python version and numpy version of this machine."""
+    """Platform and library versions."""
     import platform
 
     return {

@@ -1,28 +1,4 @@
-"""Grow the starting index under a maintenance policy instead of building it with k-means.
-
-Global k-means puts no limit on partition size, so it cannot balance partitions when a partition
-holds fewer vectors than the space has dimensions. On GIST, with about 100 vectors per partition
-in 960 dimensions, it leaves 14.6 percent of partitions below the merge threshold and the
-smallest with a single vector, and no choice of the number of vectors, K or the average size
-avoids that. An index grown from empty under a maintenance policy is bounded in both directions by
-construction, because a split leaves two halves of about half the split threshold and inserts only
-ever add. On GIST at 200,000 vectors with the same K and thresholds, the grown index has a smallest
-partition of 82 vectors and none outside the thresholds, where exact Lloyd gives 1 and 45.
-
-The arrivals follow the NeurIPS 2023 Big ANN streaming runbook, inserts and deletes local to one
-cluster at a time, in shuffled Dirichlet burst rounds. Starting from empty, the first burst into
-a cluster creates structure, which is how the published generator works.
-
-The construction differs from Big ANN in two declared ways. It deletes one vector for every four
-inserted, instead of Big ANN's delete fraction of 0.5 to 0.9, which would consume about 667,000
-vectors to reach 200,000 live ones, while the arrival schedule itself is kept. And the index is
-maintained by LIRE, SPFresh section 3.2, which reacts to size alone and never reads query access,
-so the starting index carries no query distribution.
-
-The result, a `Staple`, keeps the size thresholds it was grown to satisfy, and callers read
-`Staple.hi` and `Staple.lo` instead of deriving thresholds from the final average size. Ada-IVF
-also publishes its size limits as fixed constants rather than as multiples of an average.
-"""
+"""Grow the starting index under LIRE."""
 
 from __future__ import annotations
 
@@ -35,28 +11,17 @@ from src.config import DATA_DIR
 from src.index import IVFIndex
 from src.maintainers.lire_lite import LireLiteMaintainer
 
-# the number of workload clusters the arrival schedule walks over, the number Big ANN uses for
-# its streaming runbooks
+# number of workload clusters, as in Big ANN
 N_WORKLOAD_CLUSTERS: int = 64
 
-# where the workload cluster labels are stored. labelling 1,000,000 vectors takes about a minute.
-# the stored labels also anchor reproducibility, because k-means over many vectors gives a
-# different answer at a different thread count, so a refit under other thread settings would
-# change every starting index and every number derived from it. do not delete this directory to
-# force a refit
+# stored cluster labels, keep them for reproducibility
 WORKLOAD_LABEL_CACHE_DIR: Path = DATA_DIR / "workload_labels"
 
 
 def workload_labels(
     vectors: np.ndarray, n_clusters: int = N_WORKLOAD_CLUSTERS, seed: int = 42
 ) -> np.ndarray:
-    """Assign every base vector to a workload cluster, stored on disk after the first call.
-
-    Workload clusters are the regions a burst of arrivals falls into, and they are not the index
-    partitions. They depend on the data and the seed alone, so every policy in a comparison sees
-    the same stream. The clusters are fitted with k-means on a sample of 100,000 vectors, and
-    every vector is then assigned to the nearest cluster centre.
-    """
+    """Assign every vector to a workload cluster, cached on disk."""
     WORKLOAD_LABEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache = (WORKLOAD_LABEL_CACHE_DIR /
              f"labels_{len(vectors)}_{vectors.shape[1]}_c{n_clusters}_s{seed}.npy")
@@ -88,14 +53,7 @@ def clustered_runbook(
     alpha: tuple[float, ...] = (100.0, 15.0, 10.0, 5.0, 3.0),
     delete_fraction: tuple[float, float] = (0.5, 0.9),
 ) -> list[tuple[str, int, int]]:
-    """Return the Big ANN clustered arrival schedule as a list of batches.
-
-    Each cluster draws Dirichlet weights over the rounds, one of them much larger than the rest,
-    and the weights are shuffled per cluster, so each cluster has one large burst in a round chosen
-    at random. Each batch is an
-    operation kind, insert or delete, a cluster and a count. Deletes follow each round's inserts,
-    a random fraction of them divided by `insert_delete_ratio`.
-    """
+    """Return the Big ANN clustered arrival schedule as a list of batches."""
     n_clusters = len(spare_per_cluster)
     if n_clusters == 0 or n_inserts <= 0:
         return []
@@ -124,16 +82,7 @@ def clustered_runbook(
 
 @dataclass
 class Staple:
-    """A grown starting index, with everything a measured stream needs to continue from it.
-
-    `rng` is the generator the construction used, passed on rather than reseeded. The stream draws
-    its cluster walk from the state the construction left, so a fresh generator would give a
-    different stream.
-
-    `members` holds the vector rows of each workload cluster in arrival order, and `cursor` the
-    next unused position in each. `age_ids` lists every inserted vector in insertion order, and
-    `alive` marks which are still live, so the list is always sorted oldest first.
-    """
+    """A grown starting index and what the stream needs from it."""
 
     index: IVFIndex
     hi: int
@@ -171,14 +120,7 @@ def grow_staple(
     seed: int = 42,
     n_clusters: int = N_WORKLOAD_CLUSTERS,
 ) -> Staple:
-    """Grow an index from a small k-means start to `cap` live vectors under LIRE.
-
-    The first `bootstrap` vectors, spread over every workload cluster, are partitioned with
-    k-means at `target_avg` vectors per partition. The rest arrive by the clustered schedule, and
-    LIRE maintains the index as it grows. The split threshold is 4 times `target_avg`, and the
-    merge threshold is the split threshold divided by `window`. The reported runs use a window of
-    8, the ratio SPFresh publishes, 80 over 10, which with a target of 100 gives 400 and 50.
-    """
+    """Grow an index from a small k-means start to `cap` live vectors under LIRE."""
     rng = np.random.default_rng(seed)
     members: dict[int, np.ndarray] = {}
     for c in range(n_clusters):
@@ -188,7 +130,7 @@ def grow_staple(
     cursor = dict.fromkeys(members, 0)
     spare_per_cluster = np.array([len(members[c]) for c in range(n_clusters)])
 
-    # each insert adds 1 minus 1 over the ratio live vectors net, so budget the inserts the cap needs
+    # inserts needed to reach the cap
     net = max(0.05, 1.0 - 1.0 / build_ratio)
     budget = int(cap / net * 1.25)
     book = clustered_runbook(spare_per_cluster, budget, rng, insert_delete_ratio=build_ratio)
@@ -199,7 +141,7 @@ def grow_staple(
     index = IVFIndex(dim=base.shape[1])
 
     boot_rows: list[int] = []
-    for c in range(n_clusters):          # the bootstrap is spread over every cluster
+    for c in range(n_clusters):  # spread over every cluster
         take = bootstrap // n_clusters
         boot_rows.extend(members[c][cursor[c]:cursor[c] + take].tolist())
         cursor[c] += take
@@ -249,9 +191,7 @@ def grow_staple(
                 stop = True
                 break
 
-    # construction ends when LIRE has no work left, not when the cap is reached. maybe_maintain
-    # acts only every check interval, so stopping at the cap could leave work undone. on three GIST
-    # starting indexes this loop changed nothing, so it is a safeguard
+    # stop when LIRE has nothing left to do
     for _ in range(50):
         rep = maint.maintain(index)
         if not (rep.num_splits or rep.num_merges):
@@ -269,13 +209,7 @@ def grow_staple(
 def sliding_window_cohorts(
     staple: Staple, max_t: int
 ) -> dict[int, list[int]]:
-    """Schedule the vectors of the starting index to expire over the first half of the stream.
-
-    The starting index is the content of the retention window at time 0, not a permanent layer
-    beneath it. Left permanent, it would give every partition a floor it could never fall below.
-    It is split into `max_t // 2` groups, oldest first, one expiring per time step, the same lag
-    every later batch expires at. Returns a map from time step to the ids that expire then.
-    """
+    """Expire the starting index over the first half of the stream."""
     surviving = staple.surviving_ids()
     w = max(1, max_t // 2)
     chunk = max(1, len(surviving) // w)

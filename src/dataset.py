@@ -1,9 +1,4 @@
-"""Readers for SIFT1M and GIST1M, and exact ground truth.
-
-The reported runs use `load_sift1m`, `load_gist1m` and `compute_ground_truth`. The files live under
-data/ and `scripts/download_datasets.py` fetches them. `make_synthetic` builds a small dataset for
-quick checks, and `split_base_for_streaming` is not used by the reported runs.
-"""
+"""Readers for SIFT1M and GIST1M, and exact ground truth."""
 
 from __future__ import annotations
 
@@ -15,10 +10,7 @@ from src.config import DATA_DIR
 
 
 def read_fvecs(path: Path) -> np.ndarray:
-    """Read a .fvecs file into a float32 matrix.
-
-    Each row is stored as its dimension, a 32 bit integer, followed by that many floats.
-    """
+    """Read a .fvecs file into a float32 matrix."""
     with open(path, "rb") as f:
         raw = np.fromfile(f, dtype=np.int32)
     if len(raw) == 0:
@@ -28,7 +20,7 @@ def read_fvecs(path: Path) -> np.ndarray:
 
 
 def read_ivecs(path: Path) -> np.ndarray:
-    """Read a .ivecs file, the same layout as .fvecs with integers, into an int32 matrix."""
+    """Read a .ivecs file."""
     with open(path, "rb") as f:
         raw = np.fromfile(f, dtype=np.int32)
     if len(raw) == 0:
@@ -40,10 +32,7 @@ def read_ivecs(path: Path) -> np.ndarray:
 def load_sift1m(
     data_dir: Path = DATA_DIR,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Load SIFT1M and return the base vectors, the queries and the ground truth.
-
-    The shapes are one million by 128, ten thousand by 128 and ten thousand by 100.
-    """
+    """Load SIFT1M and return the base vectors, the queries and the ground truth."""
     sift_dir = data_dir / "sift"
     base = read_fvecs(sift_dir / "sift_base.fvecs")
     queries = read_fvecs(sift_dir / "sift_query.fvecs")
@@ -57,10 +46,7 @@ def load_sift1m(
 def load_gist1m(
     data_dir: Path = DATA_DIR,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Load GIST1M and return the base vectors, the queries and the ground truth.
-
-    The shapes are one million by 960, one thousand by 960 and one thousand by 100.
-    """
+    """Load GIST1M and return the base vectors, the queries and the ground truth."""
     gist_dir = data_dir / "gist"
     base = read_fvecs(gist_dir / "gist_base.fvecs")
     queries = read_fvecs(gist_dir / "gist_query.fvecs")
@@ -77,7 +63,7 @@ def make_synthetic(
     n_clusters: int = 50,
     seed: int = 42,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return a Gaussian mixture dataset, base vectors, queries and ground truth, for quick checks."""
+    """Small synthetic dataset for quick checks."""
     rng = np.random.default_rng(seed)
     n_queries = max(100, n // 100)
 
@@ -98,11 +84,7 @@ def make_synthetic(
 
 
 def compute_ground_truth(base: np.ndarray, queries: np.ndarray, k: int = 100) -> np.ndarray:
-    """Return the row indices of the exact `k` nearest base vectors of every query.
-
-    Uses an exhaustive Faiss index when Faiss is installed, and scikit-learn otherwise. Both
-    compare every query with every vector, so the answer is exact either way.
-    """
+    """Return the row indices of the exact `k` nearest base vectors of every query."""
     try:
         import faiss
 
@@ -124,11 +106,7 @@ def split_base_for_streaming(
     initial_fraction: float = 0.5,
     seed: int = 42,
 ) -> tuple[np.ndarray, list[int], np.ndarray, list[int]]:
-    """Split the base vectors at random into an initial set and a pool of later inserts.
-
-    The ids are the original row numbers, so they still match the published ground truth after
-    the pool vectors are inserted.
-    """
+    """Split the base vectors into an initial set and later inserts."""
     n = len(base)
     rng = np.random.default_rng(seed)
     indices = rng.permutation(n)

@@ -1,11 +1,4 @@
-"""Download SIFT1M and GIST1M into data/.
-
-    python scripts/download_datasets.py --dataset all
-
-SIFT1M is tried from a Hugging Face mirror first and falls back to the original TEXMEX FTP
-archive. GIST1M comes from the TEXMEX FTP archive. A dataset already present is skipped. SIFT1M
-takes about 0.5 GB on disk and GIST1M about 5.5 GB.
-"""
+"""Download SIFT1M and GIST1M into data/."""
 
 from __future__ import annotations
 
@@ -35,7 +28,7 @@ def _download(url: str, dest: Path) -> None:
 
 
 def download_sift1m(data_dir: Path) -> None:
-    """Download SIFT1M into `data_dir`/sift, from the mirror or else from the FTP archive."""
+    """Download SIFT1M."""
     sift_dir = data_dir / "sift"
     if (sift_dir / "sift_base.fvecs").exists():
         print("SIFT1M already present; skipping.")

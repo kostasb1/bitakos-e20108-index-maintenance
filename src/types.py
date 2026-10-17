@@ -1,10 +1,4 @@
-"""Plain data records shared across the code.
-
-`MaintenanceReport` is the important one. Every maintenance pass returns one, and
-`Maintainer.maybe_maintain` adds its counters to the running totals that become the work columns
-of a result row. `CostModel` is the linear cost model the policies fall back to when no profiled
-scan cost curve is given, and `ExperimentConfig` is not used by the reported runs.
-"""
+"""Plain data records shared across the code."""
 
 from __future__ import annotations
 
@@ -45,56 +39,31 @@ class IndexStats:
 
 @dataclass
 class MaintenanceReport:
-    """What one maintenance pass did, as counts of actions and of the work they took.
-
-    Work has two parts. `vectors_processed` counts every vector read, copied or averaged, and the
-    distance fields count every distance evaluation between two vectors. Both are one pass over
-    the dimensions of a vector, which is why they can be added. Deciding whether to act is not
-    charged, only carrying out an action is.
-    """
+    """What one maintenance pass did, as counts of actions and of the work they took."""
 
     triggered: bool = False
     num_splits: int = 0
-    # splits that the cost estimate admitted and the exact recomputation on the real children then
-    # declined, the verify step of Quake. zero for every policy that does not use predicted cost
+    # splits declined by the exact check
     num_splits_declined: int = 0
     num_merges: int = 0
-    # merges that the estimate admitted and the exact recomputation declined, Quake section 4.2.3
+    # merges declined by the exact check
     num_merges_declined: int = 0
-    # partitions removed by the forced delete of Quake, which fires when a partition has lost more
-    # than a set fraction of its size since the previous pass, without consulting the cost model.
-    # a Quake delete moves the vectors to their nearest partitions and is counted in num_merges,
-    # so these are counted there too, and separately here because no cost estimate chose them
+    # forced deletes of Quake
     num_forced_merges: int = 0
-    # distance evaluations between a vector and a centroid made while carrying out actions. k-means
-    # pays iterations times points times centroids, a reassignment pays points times candidate
-    # centroids, and a neighbour lookup inside an action pays one per partition
+    # distance evaluations while acting
     distance_evaluations: int = 0
-    # the same, made inside k-means, counted apart because a library runs k-means as batched
-    # matrix products, so one of its distances is cheaper than a scan distance. small is the
-    # 2-means of a split or the k2-means of DeDrift, a few centroids over a few hundred points.
-    # bulk is a full rebuild, hundreds of centroids over the whole index. the calibration prices
-    # each kind against a scan distance, so work is comparable across methods
+    # k-means distances, small and bulk
     kmeans_distance_evaluations: int = 0
     bulk_kmeans_distance_evaluations: int = 0
-    # the part of vectors_processed spent on compaction, the stored size each compaction reads.
-    # kept apart because the reported query cost reads live vectors only, the delete model of Quake
-    # and Faiss, under which compaction gains nothing, so the reported work leaves it out. the
-    # tombstone model, under which compaction does gain, is reported beside it
+    # compaction reads
     compaction_reads: int = 0
-    # vectors moved one at a time between existing partitions, the reassignment of SPFresh LIRE
-    # and the reindexing radius of Ada-IVF. its cost grows with the boundary, not the index
+    # vectors reassigned one at a time
     num_reassigned: int = 0
-    # empty partitions removed. this is not a merge, since an empty partition has nothing to move,
-    # and counting it as one would inflate the merge rate
+    # empty partitions removed
     num_collected: int = 0
-    # vectors moved by a wholesale repartition, a global rebuild or a DeDrift split. its cost grows
-    # with the index, so it is counted apart from num_reassigned
+    # vectors moved by a rebuild or DeDrift split
     num_repartitioned: int = 0
-    # vectors that passed the two necessary conditions of LIRE and were therefore distance checked,
-    # SPFresh section 3.3. num_reassigned divided by this is how often the conditions led to a
-    # move. zero for every policy except LIRE, and counted on the split path only, since the merge
-    # path applies no condition
+    # vectors checked by the LIRE conditions
     num_examined: int = 0
     num_centroids_recomputed: int = 0
     wall_time_seconds: float = 0.0
@@ -115,7 +84,7 @@ class QualityReport:
 
 @dataclass
 class CostModel:
-    """A linear latency model, alpha times size plus beta times drift plus gamma times access."""
+    """Linear latency model."""
 
     alpha: float
     beta: float
@@ -129,17 +98,11 @@ class CostModel:
         return max(0.0, raw)
 
     def scan_latency(self, size: int) -> float:
-        """Return lambda(s) of Quake section 4.1, the cost of scanning a partition of `size` vectors.
-
-        This linear model has no measured curve, so it uses its linear form.
-        """
+        """lambda(s), the cost of scanning a partition of `size` vectors."""
         return self.predict_latency(size=size)
 
     def centroid_latency(self, n_centroids: int) -> float:
-        """Return the cost of comparing a query with `n_centroids` centroids.
-
-        Priced as a scan of that many vectors.
-        """
+        """Return the cost of comparing a query with `n_centroids` centroids."""
         return self.predict_latency(size=n_centroids)
 
     def to_dict(self) -> dict[str, float]:
@@ -160,7 +123,7 @@ class CostModel:
 
 @dataclass
 class ExperimentConfig:
-    """Parameters of one experiment, kept for compatibility and not used by the reported runs."""
+    """Old experiment settings, not used."""
 
     dataset_name: str
     n_vectors: int

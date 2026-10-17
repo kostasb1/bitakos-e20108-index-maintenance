@@ -1,14 +1,4 @@
-"""One IVF partition, its vectors, its centroid and its access count.
-
-A delete marks the vector with a tombstone and returns at once. The vector stays in storage until
-`compact` rewrites the partition, so `size()` counts live vectors and `total_size()` counts stored
-ones. Every size rule reads `size()`, except two in LIRE, the split trigger and the capacity check
-for a merge partner, which read the stored length as SPFresh does.
-
-`get_live_vectors()` returns `(ids, vectors)` as an independent copy that a caller may keep.
-`_live_block()` returns `(vectors, ids)`, in the opposite order, possibly as a view into the
-storage, and is meant for the scan only.
-"""
+"""One IVF partition, its vectors, its centroid and its access count."""
 
 from __future__ import annotations
 
@@ -19,29 +9,22 @@ from src.vector import compute_centroid, l2_distance
 
 
 class Partition:
-    """A partition of the index, its stored vectors, tombstones, centroid and access count."""
+    """One partition, its vectors, tombstones, centroid and access count."""
 
     def __init__(self, partition_id: int, centroid: np.ndarray) -> None:
         """Create an empty partition with the given id and centroid."""
         self.partition_id = partition_id
         self.centroid: np.ndarray = centroid.copy()
         self.vector_ids: list[int] = []
-        # the vectors live in one contiguous block of rows, the layout Quake uses for its
-        # partitions. a contiguous block lets the scan read every vector in a single pass, which is
-        # what the measured scan cost assumes. _n is the number of rows in use, the rest of the
-        # block is spare capacity
+        # vectors in one contiguous block, _n rows used
         self._buf: np.ndarray = np.empty((0, centroid.shape[0]), dtype=centroid.dtype)
         self._n: int = 0
-        self._id_to_pos: dict[int, int] = {}  # vector id to its row, tombstoned vectors included
+        self._id_to_pos: dict[int, int] = {}  # id to row, tombstones included
         self.tombstones: set[int] = set()
-        # the rows and ids of the live vectors, rebuilt on the first read after any change. the
-        # rows are an integer array so that gathering them is one numpy operation
+        # live rows and ids, rebuilt after a change
         self._live_rows: np.ndarray | None = None
         self._live_ids: list[int] | None = None
-        # how many routed queries probed this partition in the current window. it is a float
-        # because the bandit decays it by a factor each pass, while the Quake policy resets it to
-        # zero after each pass. divided by index.queries_routed it is the access fraction A of
-        # Quake
+        # access count, a float because the bandit decays it
         self.access_count: float = 0.0
         self._cached_true_mean: np.ndarray | None = None
         self._dirty: bool = True
@@ -60,11 +43,7 @@ class Partition:
         return self.size() == 0
 
     def _ensure_capacity(self, required: int) -> None:
-        """Grow the storage block so it holds at least `required` rows.
-
-        The capacity doubles each time, as in Quake, so a series of appends costs constant time
-        per append on average.
-        """
+        """Grow the storage block so it holds at least `required` rows."""
         if required <= self._buf.shape[0]:
             return
         new_cap = max(8, required, self._buf.shape[0] * 2)
@@ -78,11 +57,7 @@ class Partition:
         self._live_ids = None
 
     def add(self, vec_id: int, vec: np.ndarray) -> None:
-        """Store a vector in the partition.
-
-        If the id is present as a tombstone, the vector is written over the old row and revived,
-        otherwise it is appended.
-        """
+        """Store a vector in the partition."""
         self._invalidate_live()
         if vec_id in self._id_to_pos:
             self._buf[self._id_to_pos[vec_id]] = vec
@@ -97,19 +72,7 @@ class Partition:
         self._dirty = True
 
     def mark_deleted(self, vec_id: int) -> None:
-        """Delete a vector by marking it with a tombstone.
-
-        The delete takes constant time and moves nothing, so it is charged no maintenance work. The
-        vector stays stored until `compact` rewrites the partition, and that compaction pays the
-        cost, proportional to the stored length. A policy that never compacts never pays, but it
-        keeps the dead vectors in storage until the run ends, and stored minus live size is
-        reported for every run so the debt stays visible.
-
-        This follows SPFresh, which leaves a deleted vector in its posting until a split or merge
-        rewrites it. Quake removes a vector at once instead. The reported query cost reads live
-        vectors only, which is the Quake and Faiss model, and the SPFresh model, in which
-        tombstones are scanned, is measured beside it, see `metrics.stored_cost_at`.
-        """
+        """Delete a vector by marking it with a tombstone."""
         if vec_id not in self._id_to_pos:
             raise KeyError(f"vec_id {vec_id} not in partition {self.partition_id}")
         self.tombstones.add(vec_id)
@@ -121,13 +84,12 @@ class Partition:
         return vec_id in self.tombstones
 
     def compact(self) -> int:
-        """Rewrite the storage with the live vectors only, and return how many were removed."""
+        """Remove tombstoned vectors, return how many."""
         if not self.tombstones:
             return 0
         removed = len(self.tombstones)
 
-        # one gather of the surviving rows into a new block of exactly the right size, a cost
-        # proportional to the stored length as the tombstone design assumes
+        # copy live rows into a new block
         rows, new_ids = self._live_block()
         new_ids = list(new_ids)
         self._buf = np.ascontiguousarray(rows, dtype=self._buf.dtype)
@@ -141,10 +103,7 @@ class Partition:
         return removed
 
     def true_mean(self) -> np.ndarray:
-        """Return the mean of the live vectors, or the centroid if there are none.
-
-        The mean is cached until the partition changes.
-        """
+        """Return the mean of the live vectors, or the centroid if there are none."""
         if self._cached_true_mean is not None and not self._dirty:
             return self._cached_true_mean
 
@@ -158,10 +117,7 @@ class Partition:
         return self._cached_true_mean
 
     def centroid_drift(self) -> float:
-        """Return the distance between the centroid and the mean of the live vectors.
-
-        An empty partition has zero drift by definition.
-        """
+        """Return the distance between the centroid and the mean of the live vectors."""
         if self.size() == 0:
             return 0.0
         return l2_distance(self.centroid, self.true_mean())
@@ -182,12 +138,7 @@ class Partition:
         self._radius = float(np.linalg.norm(live_vecs - self.centroid, axis=1).max())
 
     def radius(self) -> float:
-        """Return an upper bound on the distance from the centroid to any live vector.
-
-        A delete can only shrink the true radius, so the stored value stays a valid upper bound
-        without being recomputed on every delete, which would cost a full pass over the partition.
-        `compact` and `update_centroid` tighten it again, since they read the live vectors anyway.
-        """
+        """Return an upper bound on the distance from the centroid to any live vector."""
         return self._radius
 
     def record_access(self) -> None:
@@ -203,12 +154,7 @@ class Partition:
         return self._buf[self._id_to_pos[vec_id]]
 
     def _live_block(self) -> tuple[np.ndarray, list[int]]:
-        """Return the live vectors and their ids, for the scan only.
-
-        When nothing is tombstoned the vectors are a view into the storage, so a caller must
-        neither write to them nor keep them across a change to the partition. Use
-        `get_live_vectors` for an independent copy.
-        """
+        """Return the live vectors and their ids, for the scan only."""
         if not self.tombstones:
             return self._buf[:self._n], self.vector_ids
         if self._live_rows is None:
@@ -221,15 +167,12 @@ class Partition:
         return self._buf[self._live_rows], self._live_ids
 
     def get_live_vectors(self) -> tuple[list[int], np.ndarray]:
-        """Return the ids and a copy of the vectors of the live vectors, safe for the caller to keep.
-
-        The vectors are returned in the centroid number type.
-        """
+        """Ids and a copy of the live vectors."""
         if self.size() == 0:
             d = self.centroid.shape[0]
             return [], np.empty((0, d), dtype=self.centroid.dtype)
         rows, live_ids = self._live_block()
-        # astype always copies, so the caller never shares memory with the storage
+        # astype copies
         return list(live_ids), rows.astype(self.centroid.dtype, copy=True)
 
     def stats(self, quality: float = 0.0) -> PartitionStats:

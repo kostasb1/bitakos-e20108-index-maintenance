@@ -1,29 +1,11 @@
-"""How much of the spread in the query cost comes from the query sample, and how much from the build.
-
-    python scripts/rebuild_noise.py --dataset sift1m --seed 42
-
-At the end of a run every policy of a seed holds the same live vectors, since the stream picks its
-deletes from the data and never from the index, and the policies that keep K fixed also hold the
-same K. A fresh exact k-means of those vectors at that K, with the same seed, still varied by 5.5
-to 17.7 percent on SIFT and 8.6 to 22.9 on GIST, and the only input that differs is the row order.
-This separates the two possible sources of that spread.
-
-Builds are fresh exact k-means of the end of run live vectors at the same K and seed, each given
-the rows in a different order, scored on the 400 held out queries of the main runs and on 4,000
-held out queries drawn the same way. Slices score one fixed index on disjoint slices of 400 of the
-4,000, for the end of run index and for the first fresh build.
-
-If the spread over builds shrinks on the 4,000 and the slices vary as much as the builds do on 400,
-the query sample is the source. If the builds still vary on 4,000, the clusterings really differ
-in quality. Results go to results/raw/rebuild_noise_<dataset>_s<seed>.csv.
-"""
+"""How much of the query cost spread comes from the queries and how much from the build."""
 from __future__ import annotations
 
 import os
 import sys
 from pathlib import Path
 
-# the same thread pinning as final_sweep, the build is reproducible only with it
+# pin threads, as in final_sweep
 for _thread_var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
     os.environ[_thread_var] = "1"
 
@@ -46,7 +28,7 @@ from src.stream import run_stream, split_query_pools  # noqa: E402
 
 
 def score(index: IVFIndex, q: np.ndarray) -> tuple[float, float]:
-    """Return the reported query cost on `q`, priced at the nprobe that meets recall 0.9, and that nprobe."""
+    """Return the query cost at recall 0.9 and its nprobe."""
     _, npr, _, _ = cost_at_target_recall(index, q, DEFAULT_K, 0.9)
     return query_cost(priced_cost_at(index, q, npr), len(index.partitions), index.dim), float(npr)
 
@@ -58,13 +40,13 @@ def spread(x) -> float:
 
 
 def cv(x) -> float:
-    """Return the coefficient of variation, the sample standard deviation over the mean, in percent."""
+    """Coefficient of variation, in percent."""
     x = np.asarray(x, dtype=float)
     return 100 * x.std(ddof=1) / x.mean()
 
 
 def main() -> None:
-    """Run the no maintenance stream, then score repeated builds and query slices of its end state."""
+    """Run the no maintenance stream, then score repeated builds of its end state."""
     p = argparse.ArgumentParser()
     p.add_argument("--dataset", choices=["sift1m", "gist1m"], default="sift1m")
     p.add_argument("--seed", type=int, default=42)
@@ -74,13 +56,13 @@ def main() -> None:
     a = p.parse_args()
     out_path = a.output or RESULTS_DIR / f"rebuild_noise_{a.dataset}_s{a.seed}.csv"
 
-    # the defaults of the main runs, so the no maintenance run below is the same run
+    # defaults of the main runs
     base, queries, _ = load_sift1m() if a.dataset == "sift1m" else load_gist1m()
     labels = workload_labels(base, N_WORKLOAD_CLUSTERS, a.seed)
     st = grow_staple(base, labels, cap=50_000, target_avg=100, bootstrap=5_000, build_ratio=4.0,
                      window=8, seed=a.seed)
     qpool, _, eval_q = split_query_pools(queries, a.seed, 0.1, 0.8, 400)
-    # the same draw with a larger held out sample, from the same half and the same mixture
+    # larger held-out sample, same draw
     _, _, large_q = split_query_pools(queries, a.seed, 0.1, 0.8, a.large)
     t = time.perf_counter()
     out = run_stream(st, base, NoOpMaintainer(), qpool, eval_q, a.seed, measure_ops=120_000,

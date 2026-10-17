@@ -1,11 +1,4 @@
-"""Run the experiments, every combination of dataset, seed and policy, into one result file.
-
-Each run grows or reuses the starting index of its seed, runs one policy over the retention window
-stream of `src/stream.py`, and writes one row with every reading, the work and the operation counts.
-The file is written after every run, each row carries a fingerprint of the code, machine and
-parameters, and `--resume` reruns only what is missing, so a long set of runs can be stopped and
-restarted. The exact commands behind the reported results are in the README.
-"""
+"""Run the experiments into one result file."""
 
 from __future__ import annotations
 
@@ -13,9 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-# pin the thread pools to one before numpy or scikit-learn are imported, since both read these
-# variables only at import time. k-means over many vectors gives different answers at different
-# thread counts, so without pinning the runs would not be reproducible
+# pin threads before numpy is imported, k-means depends on the thread count
 for _thread_var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
     os.environ[_thread_var] = "1"
 
@@ -53,20 +44,14 @@ from src.provenance import fingerprint, write_sidecar  # noqa: E402
 from src.staple import N_WORKLOAD_CLUSTERS, grow_staple, workload_labels  # noqa: E402
 from src.stream import EXTRA_TARGETS, run_stream, split_query_pools  # noqa: E402
 
-# the compared policies. each is a baseline or an implementation of a published method, except the
-# bandit, which is the contribution of the thesis
+# the compared policies
 MAINTAINERS = ["no_op", "global_rebuild", "lire_lite",
                "dedrift_lazy", "dedrift_split", "dedrift_hybrid",
                "cost_driven_quake", "bandit"]
 DEDRIFT_VARIANTS = ["dedrift_lazy", "dedrift_split", "dedrift_hybrid"]
-# variants that change one thing about a policy. bandit_linear is the bandit without the cost
-# model, so its reward uses access times size. lire_lite_no_merge is LIRE with merging switched
-# off. neither is in the reported results
+# variants not in the reported results
 ABLATION_VARIANTS = ["bandit_linear", "lire_lite_no_merge"]
-# the declared tau sensitivity configuration, the Quake policy at 50 ns for split and delete alike.
-# Quake stays at the paper value of 250 ns and is what the thesis reports as Quake. 50 ns is the
-# value the Quake authors use for Quake in their released SIFT1M maintenance experiment, so it is
-# taken from a source and not chosen by result
+# Quake with tau = 50 ns, the value of the Quake SIFT1M experiment
 SENSITIVITY_VARIANTS = ["cost_driven_quake_tau50"]
 QUAKE_TAU_ARM_NS = 50.0
 _PROFILED: dict = {}
@@ -78,12 +63,7 @@ def profile_path(dim: int) -> Path:
 
 
 def profiled_cost_model(dim: int, reprofile: bool = False):
-    """Return the scan cost curve lambda(s) for `dim` dimensions, read once from its stored file.
-
-    The stored curve is the Faiss price curve that scripts/calibrate_query_cost.py writes, the same
-    one the scoring prices with. It is never measured here, because a curve measured again would
-    differ, and every run must read the same one.
-    """
+    """Load the scan cost curve for `dim` dimensions."""
     rebuild = ("lambda is the Faiss price curve, rebuild it with "
                "python scripts/calibrate_query_cost.py, or with --lambda-only from the stored "
                "price list")
@@ -99,15 +79,11 @@ def profiled_cost_model(dim: int, reprofile: bool = False):
     return _PROFILED[dim]
 
 
-DEDRIFT_N_LARGEST: int | None = None  # from --dedrift-n-largest, None uses the fraction
+DEDRIFT_N_LARGEST: int | None = None  # None uses the fraction
 
 
 def build(name: str, seed: int, hi: int, lo: int, cost_model):
-    """Create the policy called `name`, configured as in the reported runs.
-
-    `hi` and `lo` are the split and merge thresholds the starting index was grown to satisfy. The
-    bandit's minimum split size is `hi` over 4, the target average partition size.
-    """
+    """Create the policy called `name`, configured as in the reported runs."""
     if name == "no_op":
         return NoOpMaintainer()
     if name == "global_rebuild":
@@ -117,33 +93,26 @@ def build(name: str, seed: int, hi: int, lo: int, cost_model):
             max_partition_size=hi, min_partition_size=lo,
             enable_merge=(name == "lire_lite"), seed=seed)
     if name.startswith("dedrift_"):
-        # the number of largest clusters is a fraction of K, see dedrift.py
         return DeDriftMaintainer(variant=name.split("_", 1)[1], n_largest=DEDRIFT_N_LARGEST,
                                  seed=seed)
-    uncap = 1_000_000  # no limit on actions per pass, every policy does what it decides
+    uncap = 1_000_000  # no limit on actions per pass
     if name == "cost_driven_quake":
-        # Quake section 4.2.2, actions admitted by predicted cost change. tau is the published
-        # value
+        # Quake, published tau
         return CostDrivenQuakeMaintainer(
             cost_model=cost_model, max_actions_per_maintain=uncap,
             nprobe=DEFAULT_NPROBE, seed=seed)
     if name == "cost_driven_quake_tau50":
-        # the declared sensitivity configuration, see SENSITIVITY_VARIANTS
         return CostDrivenQuakeMaintainer(
             cost_model=cost_model, max_actions_per_maintain=uncap,
             nprobe=DEFAULT_NPROBE, seed=seed, tau=QUAKE_TAU_ARM_NS, delete_tau=QUAKE_TAU_ARM_NS)
     if name in ("bandit", "bandit_linear"):
-        # bandit_linear withholds the cost model, so its reward prices a partition as access times
-        # size. no drift_threshold is passed, so the drift limit is DRIFT_FRACTION times the data
-        # scale
+        # bandit without the cost model
         return BanditMaintainer(
             cost_model=None if name == "bandit_linear" else cost_model,
             max_partition_size=hi, min_partition_size=lo,
-            # every partition is a candidate each pass, as Quake considers every partition, and
-            # the learner discounts once per pass
+            # every partition is a candidate, discount once per pass
             min_split_size=max(1, hi // 4), n_candidates=None, discount_mode="pass",
-            # track_reversals only records how often a split or merge was undone, and changes no
-            # decision
+            # only records reversals, changes no decision
             coverage_penalty_weight=2.0, seed=seed, track_reversals=True)
     raise ValueError(name)
 
@@ -152,12 +121,7 @@ COST_AWARE = ("cost_driven_quake", "cost_driven_quake_tau50", "bandit")
 
 
 def run_one_staple(base, name, seed, staple, qpool, eval_q, args, served_q=None) -> dict:
-    """Run one policy on one seed over the retention window stream, and return its result row.
-
-    Every policy of a seed runs from a copy of one starting index and sees the same stream.
-    `eval_q` is the held out scoring sample and `served_q` a sample of the routed pool, see
-    `src/stream.split_query_pools`. Every cost and work column is priced by `src/calibration.py`.
-    """
+    """Run one policy on one seed and return its result row."""
     model = profiled_cost_model(base.shape[1]) if name in COST_AWARE else None
     maint = build(name, seed, staple.hi, staple.lo, model)
     out = run_stream(staple, base, maint, qpool, eval_q, seed,
@@ -169,14 +133,10 @@ def run_one_staple(base, name, seed, staple, qpool, eval_q, args, served_q=None)
     dim = base.shape[1]
 
     def qc(r: dict, prefix: str = "", priced: str = "cost_priced") -> float:
-        """The reported query cost of a reading, priced lists plus the ranking of all K centroids."""
+        """Query cost of a reading."""
         return query_cost(r[prefix + priced], r[prefix + "parts"], dim)
 
-    # two delete models. in the reported one a deleted vector is removed at once, as in Quake and
-    # Faiss, so the scoring reads live vectors, compaction gains nothing and its reads are left out
-    # of the work, and every delete pays one copy. in the SPFresh model a deleted vector is scanned
-    # until a compaction removes it, so compaction counts and deletes are free. both are measured
-    # in every run, the second as a sensitivity check
+    # two delete models, the reported one removes deleted vectors at once
     p = prices(dim)
     reads = (int(m._cumulative_work) - int(m._cumulative_distances)
              - int(m._cumulative_kmeans) - int(m._cumulative_bulk_kmeans))
@@ -185,8 +145,7 @@ def run_one_staple(base, name, seed, staple, qpool, eval_q, args, served_q=None)
                          m._cumulative_bulk_kmeans, dim)
     work_tomb = work_cost(reads, m._cumulative_distances, m._cumulative_kmeans,
                           m._cumulative_bulk_kmeans, dim)
-    # the cost of taking in updates, charged to the total and not to maintenance work. an insert
-    # compares against all K centroids, so it grows with what maintenance did to K
+    # cost of routing inserts
     routing = p["centroid_ratio"] * int(out["insert_routing"])
     ingest = routing + p["read_copy"] * int(out["deletes"])
     queries_served = (int(out["inserts"]) + int(out["deletes"])) * args.query_ratio
@@ -194,42 +153,36 @@ def run_one_staple(base, name, seed, staple, qpool, eval_q, args, served_q=None)
     q_stored_mean = float(np.mean([qc(r, priced="cost_priced_stored") for r in rows[1:]]))
     row = {
         "maintainer": name, "seed": seed,
-        # the retention window has no insert to delete ratio, so the column is fixed at 1.0
+        # no ratio in the retention window
         "ratio": 1.0, "workload": "staple", "protocol": "heldout",
-        # the main result, calibrated query cost at recall 0.9 on held out queries at the end of
-        # the run, every probed list and centroid comparison priced in Faiss scan distances
+        # main result, query cost at recall 0.9 at the end of the run
         "query_cost0": qc(s), "query_cost": qc(e), "query_cost_mean": q_mean,
         "served_query_cost": qc(e, "served_") if served_q is not None else float("nan"),
-        # the raw readings the main result is built from, vectors scanned alone and with the
-        # centroid comparisons
+        # raw readings
         "fixed_recall_cost0": s["cost"], "fixed_recall_cost": e["cost"],
         "fixed_recall_cost_mean": float(np.mean([r["cost"] for r in rows[1:]])),
         "fixed_recall_cost_k": e["cost"] + e["parts"],
-        # the priced scan alone, before the centroid term, so the centroid price can be varied
-        # afterwards
+        # priced scan without the centroid term
         "priced_scan": e["cost_priced"],
         "priced_scan_mean": float(np.mean([r["cost_priced"] for r in rows[1:]])),
         "recall": e["raw_recall"], "fixed_recall_achieved": e["achieved"],
         "fixed_recall_std": e["recall_std"],
         "nprobe": float(e["nprobe"]), "parts": int(e["parts"]), "live": int(e["live"]),
         "stored": int(e["stored"]),
-        # work counted with every operation at weight one, and priced. reads and copies, scan
-        # distances, small k-means and large k-means are counted apart and priced by the
-        # calibration
+        # maintenance work, raw and priced
         "work": int(m._cumulative_work), "work_calibrated": work_cal,
         "work_reads": reads, "distances": int(m._cumulative_distances),
         "kmeans_distances": int(m._cumulative_kmeans),
         "bulk_kmeans_distances": int(m._cumulative_bulk_kmeans),
-        # what the whole workload cost, every query served at the mean query cost of the run plus
-        # the maintenance and the updates, all in scan distances
+        # total cost of the run
         "queries_served": queries_served,
         "total_compute": queries_served * q_mean + work_cal + ingest,
         "compaction_reads": compaction, "insert_routing": int(out["insert_routing"]),
-        # the nprobe the routed queries were served at, matched to recall 0.9 per window
+        # nprobe of the routed queries
         "route_nprobe_mean": float(np.mean(out["route_nprobe"])),
         "route_nprobe_end": int(out["route_nprobe"][-1]),
         "ingest": ingest,
-        # the SPFresh delete model beside it, tombstones scanned and compactions counted
+        # SPFresh delete model
         "fixed_recall_cost_stored": e["cost_stored"],
         "query_cost_stored": qc(e, priced="cost_priced_stored"),
         "query_cost_stored_mean": q_stored_mean,
@@ -245,17 +198,14 @@ def run_one_staple(base, name, seed, staple, qpool, eval_q, args, served_q=None)
         "examined": int(m._cumulative_examined),
         "inserts": int(out["inserts"]), "deletes": int(out["deletes"]),
     }
-    # the same reading at recall 0.8 and 0.95, at the end of the run and as the mean over it, so a
-    # ranking can be checked on either side of the 0.9 target
+    # readings at recall 0.8 and 0.95
     for tag in EXTRA_TARGETS.values():
         priced = f"cost_priced_{tag}"
         row[f"query_cost_{tag}"] = qc(e, priced=priced)
         row[f"query_cost_{tag}_mean"] = float(np.mean([qc(r, priced=priced) for r in rows[1:]]))
         row[f"fixed_recall_cost_{tag}"] = e[f"cost_{tag}"]
         row[f"nprobe_{tag}"] = float(e[f"nprobe_{tag}"])
-    # a fresh exact k-means over the final live vectors at the K this policy reached, priced like
-    # the main result. the difference separates the gain from the K a policy reaches from the gain
-    # from its partitions at that K. it can only be read here, since the final index is not kept
+    # fresh k-means at the final K, to separate the effect of K
     rebuilt = cost_rebuilt_at_own_k(out["index"], eval_q, k=DEFAULT_K, target_recall=0.9,
                                     seed=seed)
     row["query_cost_rebuilt_k"] = query_cost(rebuilt["cost_priced"], rebuilt["parts"], dim)
@@ -264,7 +214,7 @@ def run_one_staple(base, name, seed, staple, qpool, eval_q, args, served_q=None)
     if served_q is not None:
         row["served_fixed_recall_cost"] = e["served_cost"]
         row["served_nprobe"] = float(e["served_nprobe"])
-    # the readings during the run, so a policy that is good midway and poor at the end shows
+    # readings during the run
     for r in rows[1:-1]:
         row[f"query_cost_t{r['t']}"] = qc(r)
         row[f"cost_t{r['t']}"] = r["cost"]
@@ -279,11 +229,7 @@ def run_one_staple(base, name, seed, staple, qpool, eval_q, args, served_q=None)
 
 
 def aggregate_and_plot(df: pd.DataFrame, figures_dir: Path, write_figures: bool = True) -> None:
-    """Print the mean and spread of cost and work per policy, and optionally plot them.
-
-    The figure is written only when asked, because a run over part of the policies would
-    otherwise overwrite the figure of the full set with a partial one.
-    """
+    """Print the mean and spread of cost and work per policy, and optionally plot them."""
     global COST_COL, WORK_COL
     COST_COL = "query_cost" if "query_cost" in df.columns else "fixed_recall_cost"
     WORK_COL = "work_calibrated" if "work_calibrated" in df.columns else "work"
@@ -327,7 +273,7 @@ def main() -> None:
     p.add_argument("--dataset", default="sift1m", choices=["sift1m", "gist1m", "synthetic"])
     p.add_argument("--workload", default="staple", choices=["staple"],
                    help="the retention window stream of src/stream.py")
-    # the starting index and stream parameters, the defaults of the reported runs
+    # starting index and stream defaults
     p.add_argument("--cap", type=int, default=50_000)
     p.add_argument("--target-avg", type=int, default=100)
     p.add_argument("--bootstrap", type=int, default=5_000)
@@ -379,14 +325,12 @@ def main() -> None:
         base, queries, gt = load_gist1m()
     else:
         base, queries, gt = make_synthetic(n=50_000, dim=64, n_clusters=20, seed=args.seeds[0])
-    # load the scan cost curve once up front, so every run prices actions with the same curve
+    # load the scan cost curve once
     if any(n in COST_AWARE for n in args.maintainers):
         profiled_cost_model(base.shape[1], reprofile=args.reprofile_lambda)
 
-    # the retention window has no ratio axis, see run_one_staple
     args.ratios = [1.0]
-    # every run parameter that is not already a column, so two rows with the same fingerprint are
-    # comparable and two with different ones are not, see src/provenance.py
+    # run parameters for the fingerprint
     params = {"dataset": args.dataset, "workload": args.workload, "n_ops": args.n_ops,
               "cap": args.cap, "target_avg": args.target_avg, "bootstrap": args.bootstrap,
               "build_ratio": args.build_ratio, "window": args.window,
@@ -395,7 +339,7 @@ def main() -> None:
               "initial_fraction": args.initial_fraction, "query_ratio": args.query_ratio,
               "hot_fraction": args.hot_fraction, "hot_prob": args.hot_prob,
               "delete_csf": args.delete_csf, "dedrift_n_largest": args.dedrift_n_largest}
-    # one fingerprint per policy, covering only the code that can affect its rows
+    # one fingerprint per policy
     fps: dict[str, tuple[str, dict]] = {}
 
     def fp_for(name: str) -> tuple[str, dict]:
@@ -450,9 +394,7 @@ def main() -> None:
     global DEDRIFT_N_LARGEST
     DEDRIFT_N_LARGEST = args.dedrift_n_largest
 
-    # one starting index per seed, grown once and copied for each policy, which is what makes
-    # every policy of a seed see the same stream. the workload labels are stored on disk, the
-    # starting index is kept in memory for the run
+    # one starting index per seed, copied for each policy
     staples: dict[int, tuple] = {}
 
     def staple_for(seed: int):

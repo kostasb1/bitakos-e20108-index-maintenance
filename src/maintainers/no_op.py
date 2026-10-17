@@ -8,7 +8,7 @@ from src.types import MaintenanceReport
 
 
 class NoOpMaintainer(Maintainer):
-    """A policy that never acts, so the index changes only through inserts and deletes."""
+    """A policy that never acts."""
 
     name = "no_op"
 

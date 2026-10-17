@@ -1,25 +1,4 @@
-"""The scoring, how well maintenance worked, never how a policy decides.
-
-Nothing in `src/maintainers/` or `src/bandit/` reads this module. Keeping the two apart matters
-because the word cost names three different things in this code.
-
-1. Scored cost, computed here. The reported query cost has three parts, the nprobe at which recall
-   on the held out queries reaches the target (`costs_at_target_recalls`), the Faiss price of every
-   list probed at that nprobe (`priced_cost_at`), and a price per centroid that
-   `src/calibration.query_cost` adds. The number of vectors scanned (`query_scan_cost`) is kept
-   beside it as the raw count. Every search here runs with `record_access=False`, so measuring
-   never changes the access counts the policies read, and no policy can see the scored cost.
-2. Policy cost, in `src/cost_model.py` and inside the policies. The scan cost curve lambda(s) and
-   the quantities built on it, the delta C of the Quake policy and the reward of the bandit. These
-   are part of a policy, how it chooses what to do, and several policies use no cost model at all
-   and decide on size or a schedule alone.
-3. Work, the counters of `MaintenanceReport`, what running the maintenance itself cost, collected
-   during the stream rather than here.
-
-A policy cost model may disagree with the scored cost, and keeping them apart is what lets a
-disagreement show. They share one price curve, built from the scoring price list by
-`cost_model.lambda_from_prices`, so a policy decides in the unit it is scored in.
-"""
+"""The scoring, how well maintenance worked, never how a policy decides."""
 
 from __future__ import annotations
 
@@ -48,15 +27,8 @@ def recall_at_k(
 
 
 def compute_live_ground_truth(index: IVFIndex, queries: np.ndarray, k: int) -> np.ndarray:
-    """Return the ids of the exact `k` nearest live vectors of every query.
-
-    The published ground truth refers to the original dataset, so after inserts and deletes it
-    would mix index quality with neighbours that were deleted or never inserted. This computes the
-    exact neighbours over what the index holds right now.
-    """
-    # ties at exactly equal distance are broken by the order the vectors are stacked, which is
-    # partition order and can differ between policies. the order is unrelated to anything a policy
-    # optimises, so no policy is favoured, and only duplicate vectors can produce such a tie
+    """Return the ids of the exact `k` nearest live vectors of every query."""
+    # exact ties broken by stacking order
     all_ids: list[int] = []
     blocks: list[np.ndarray] = []
     for p in index.partitions.values():
@@ -85,7 +57,7 @@ def recall_at_k_live(
     k: int,
     nprobe: int,
 ) -> float:
-    """Return the mean recall at `k` at a fixed `nprobe`, against the live ground truth."""
+    """Mean recall at a fixed nprobe."""
     live_gt = compute_live_ground_truth(index, queries, k)
     if live_gt.shape[1] == 0:
         return 0.0
@@ -100,11 +72,11 @@ def recall_at_k_per_query(
     k: int,
     nprobe: int,
 ) -> np.ndarray:
-    """Return the recall at `k` of each query, the share of its true neighbours that were found."""
+    """Recall at `k` of each query."""
     results = np.zeros(len(queries))
 
     for i, q in enumerate(queries):
-        # a measurement must not add to the access counts the policies read
+        # do not record access
         retrieved_pairs = index.search(q, k, nprobe, record_access=False)
         retrieved = {vid for vid, _ in retrieved_pairs}
         truth = set(ground_truth[i, :k].tolist())
@@ -122,13 +94,7 @@ def query_scan_cost(
     index: IVFIndex, queries: np.ndarray, nprobe: int, include_centroids: bool = False,
     stored: bool = False,
 ) -> float:
-    """Return the mean number of vectors a query scans at `nprobe`.
-
-    With `include_centroids` the K centroid comparisons every query makes are added, each counted
-    as one distance like a vector comparison. With `stored` the tombstoned vectors are counted as
-    scanned too, the SPFresh delete model. The default counts live vectors only, the delete model
-    of Quake and Faiss, which is the reported one.
-    """
+    """Return the mean number of vectors a query scans at `nprobe`."""
     if not index.partitions:
         return 0.0
     sizes = {pid: (p.total_size() if stored else p.size())
@@ -143,12 +109,7 @@ def query_scan_cost(
 
 def priced_scan_cost(index: IVFIndex, queries: np.ndarray, nprobe: int,
                      stored: bool = False) -> float:
-    """Return the mean Faiss price of the lists a query probes at `nprobe`.
-
-    Each probed list is priced at its length by the measured curve of `src/calibration.py`,
-    including the cost of opening it. The probed lists are the same as in `query_scan_cost`, which
-    counts their vectors instead. With `stored` each list is priced at its length with tombstones.
-    """
+    """Return the mean Faiss price of the lists a query probes at `nprobe`."""
     if not index.partitions:
         return 0.0
     pids = list(index.partitions)
@@ -164,11 +125,7 @@ def priced_scan_cost(index: IVFIndex, queries: np.ndarray, nprobe: int,
 
 def _read_between(read: Callable[[int], float], nprobe: float, n_parts: int,
                   nprobe_grid: tuple[int, ...] | None = None) -> float:
-    """Return a reading at a fractional nprobe, interpolated between the two nprobe values around it.
-
-    The two values are the integers either side by default, or the surrounding points of an
-    explicit grid, the same bracket the counted cost was interpolated on.
-    """
+    """Interpolate a reading between two nprobe values."""
     if float(nprobe).is_integer() or nprobe <= 1 or nprobe >= n_parts:
         return read(int(round(nprobe)))
     if nprobe_grid is None:
@@ -186,23 +143,14 @@ def _read_between(read: Callable[[int], float], nprobe: float, n_parts: int,
 
 def priced_cost_at(index: IVFIndex, queries: np.ndarray, nprobe: float, stored: bool = False,
                    nprobe_grid: tuple[int, ...] | None = None) -> float:
-    """Return the priced scan at the nprobe that met the recall target.
-
-    It is interpolated on the same bracket as the count of scanned vectors, so the priced and the
-    counted reading describe the same operating point.
-    """
+    """Return the priced scan at the nprobe that met the recall target."""
     return _read_between(lambda n: priced_scan_cost(index, queries, n, stored), nprobe,
                          len(index.partitions), nprobe_grid)
 
 
 def stored_cost_at(index: IVFIndex, queries: np.ndarray, nprobe: float,
                    nprobe_grid: tuple[int, ...] | None = None) -> float:
-    """Return the scan count at the nprobe that met the recall target, with tombstones scanned.
-
-    This is the SPFresh delete model, reported beside the live cost. A deleted vector is filtered
-    out after it is read, so recall is the same under both models and so is the nprobe that meets
-    the target, and the two readings differ by the dead vectors alone.
-    """
+    """Scan count at the target recall, with tombstones scanned."""
     return _read_between(lambda n: query_scan_cost(index, queries, n, stored=True), nprobe,
                          len(index.partitions), nprobe_grid)
 
@@ -214,24 +162,7 @@ def cost_at_target_recall(
     target_recall: float = 0.9,
     nprobe_grid: tuple[int, ...] | None = None,
 ) -> tuple[float, float, float, float]:
-    """Return the scan cost at the nprobe where mean recall reaches `target_recall`.
-
-    A cost at a fixed nprobe can be gamed, since splitting partitions lowers it while recall
-    silently drops. So the nprobe is raised until recall meets the target, and the cost is read
-    there, interpolated between the two neighbouring nprobe values. Returns the cost, the
-    interpolated nprobe, the recall reached and the spread of the per query recall.
-
-    By default the two values are found by doubling nprobe from 1 until recall meets the target
-    and then bisecting inside the last doubling. Bisection is valid because recall never falls as
-    nprobe rises, since the partitions probed at n are among those probed at n plus 1. An explicit
-    `nprobe_grid` walks that grid instead.
-
-    The K centroid comparisons are left out of this raw count, as in the DeDrift efficiency
-    metric. The reported query cost adds them back at their calibrated price.
-
-    The recall spread is measured at the first nprobe that met the target, since no per query
-    values exist between two measured nprobe values.
-    """
+    """Return the scan cost at the nprobe where mean recall reaches `target_recall`."""
     if nprobe_grid is None:
         return costs_at_target_recalls(index, queries, k, (target_recall,))[target_recall]
     live_gt = compute_live_ground_truth(index, queries, k)
@@ -248,8 +179,6 @@ def cost_at_target_recall(
         per_query = recall_at_k_per_query(index, queries, live_gt, k, npr)
         rec, std = float(per_query.mean()), float(per_query.std())
         if rec >= target_recall:
-            # only the first grid point can meet the target with no lower point to interpolate
-            # from, since the loop returns as soon as recall meets the target
             if prev_npr is None:
                 return query_scan_cost(index, queries, npr, include_centroids=False), npr, rec, std
             frac = (target_recall - prev_rec) / (rec - prev_rec)
@@ -268,12 +197,7 @@ def cost_at_target_recall(
 def costs_at_target_recalls(
     index: IVFIndex, queries: np.ndarray, k: int, targets: tuple[float, ...],
 ) -> dict[float, tuple[float, float, float, float]]:
-    """Return `cost_at_target_recall` for several targets, one result per target.
-
-    The ground truth is computed once and every recall pass is reused across targets, so the
-    readings at 0.8 and 0.95 beside the main 0.9 cost only a few extra passes. Each result equals
-    what `cost_at_target_recall` returns for that target alone.
-    """
+    """Return `cost_at_target_recall` for several targets, one result per target."""
     live_gt = compute_live_ground_truth(index, queries, k)
     if live_gt.shape[1] == 0:
         return {t: (0.0, 0, 0.0, 0.0) for t in targets}
@@ -286,13 +210,7 @@ def costs_at_target_recalls(
 def cost_rebuilt_at_own_k(
     index: IVFIndex, queries: np.ndarray, k: int, target_recall: float = 0.9, seed: int = 0,
 ) -> dict:
-    """Return the cost that a fresh exact k-means over the live vectors would have at the same K.
-
-    Part of any method's gain comes from the number of partitions it reaches. This reading keeps
-    that number and replaces the partitions with a fresh build, so the maintained cost minus this
-    one is what a rebuild at that K would still have saved. The rebuild goes into a new index, so
-    `index` is not changed. It is read once at the end of a run, since the final index is not kept.
-    """
+    """Query cost of a fresh k-means at the same K."""
     ids: list[int] = []
     blocks: list[np.ndarray] = []
     for p in index.partitions.values():
@@ -315,11 +233,7 @@ def _cost_at_target_every_integer(
     index: IVFIndex, queries: np.ndarray, live_gt: np.ndarray, k: int, target_recall: float,
     n_parts: int, measured: dict[int, np.ndarray] | None = None,
 ) -> tuple[float, float, float, float]:
-    """The doubling and bisection search of `cost_at_target_recall`.
-
-    Every recall pass is measured once and kept in `measured`, so neither the bisection nor a
-    second target repeats one.
-    """
+    """The doubling and bisection search of `cost_at_target_recall`."""
     if measured is None:
         measured = {}
 
@@ -332,7 +246,7 @@ def _cost_at_target_every_integer(
     lo, hi = 0, 1
     while rec(hi) < target_recall:
         if hi >= n_parts:
-            # the target cannot be reached even by probing every partition, report that point
+            # target not reachable, report the last point
             return (query_scan_cost(index, queries, hi, include_centroids=False), hi, rec(hi),
                     float(measured[hi].std()))
         lo, hi = hi, min(2 * hi, n_parts)
@@ -344,7 +258,7 @@ def _cost_at_target_every_integer(
             lo = mid
     std = float(measured[hi].std())
     if lo == 0:
-        # met at one probe, nothing below it to interpolate from
+        # met at nprobe 1
         return query_scan_cost(index, queries, 1, include_centroids=False), 1, rec(1), std
     frac = (target_recall - rec(lo)) / (rec(hi) - rec(lo))
     cost_lo = query_scan_cost(index, queries, lo, include_centroids=False)
@@ -359,11 +273,7 @@ def adaptive_query_cost(
     target_recall: float = 0.9,
     radius_factor: float = 1.0,
 ) -> tuple[float, float, float]:
-    """Return the cost at the target recall using a per query adaptive nprobe.
-
-    Uses `IVFIndex.search_adaptive` for every query. Returns the mean vectors scanned, the mean
-    recall and the mean number of partitions probed. Not used by the reported runs.
-    """
+    """Return the cost at the target recall using a per query adaptive nprobe."""
     live_gt = compute_live_ground_truth(index, queries, k)
     if live_gt.shape[1] == 0:
         return 0.0, 0.0, 0.0
@@ -383,19 +293,12 @@ def adaptive_query_cost(
 
 
 def amortized_cost(partition: Partition) -> float:
-    """Return access count times live size, a simple measure of what a partition costs queries.
-
-    Not used by the reported runs.
-    """
+    """Access count times live size. Not used in the reported runs."""
     return partition.access_count * partition.size()
 
 
 def partition_quality(partition: Partition, cost_model: CostModel | None = None) -> float:
-    """Return a quality score of a partition, lower is healthier. Not used by the reported runs.
-
-    With a cost model it is the predicted latency, otherwise a weighted sum of size, squared drift
-    and access count.
-    """
+    """Quality score of a partition, lower is better. Not used in the reported runs."""
     if cost_model is not None:
         return cost_model.predict_latency(
             size=partition.size(),
@@ -415,7 +318,7 @@ def partition_quality(partition: Partition, cost_model: CostModel | None = None)
 
 
 def index_quality(index: IVFIndex, cost_model: CostModel | None = None) -> QualityReport:
-    """Return the quality score over all partitions and the worst one. Not used by the reported runs."""
+    """Quality score over all partitions, and the worst one. Not used in the reported runs."""
     stats_list = []
     qualities = []
     worst_id = -1
@@ -451,12 +354,7 @@ def size_imbalance(index: IVFIndex) -> float:
 
 
 def reconstruction_error(index: IVFIndex, sample_size: int = 10_000, seed: int = 0) -> float:
-    """Return the mean squared distance from sampled vectors to their centroid.
-
-    Not used by the reported runs. The sample takes at least one vector from every non empty
-    partition, so small partitions are over represented, more so the more an index is
-    fragmented.
-    """
+    """Return the mean squared distance from sampled vectors to their centroid."""
     errors: list[float] = []
     partitions = list(index.partitions.values())
     if not partitions:
@@ -489,11 +387,7 @@ def query_latency_percentiles(
     nprobe: int,
     k: int,
 ) -> dict[str, float]:
-    """Return the mean and the 50th, 95th and 99th percentile search time in milliseconds.
-
-    This is a wall clock measurement, so it enters no reported number, and the reported runs do
-    not call it. It records no access.
-    """
+    """Search time percentiles in ms. Not used in the reported runs."""
     times_ms: list[float] = []
 
     for q in queries:

@@ -1,37 +1,4 @@
-"""Tables and figures from the main results, every number priced by src/calibration.py.
-
-    python scripts/analyse_final.py --sweep results/raw/final_2709 --out results/final_2709
-
-Reads the result files of one set of runs, checks that no run is duplicated and that each policy
-carries one fingerprint, and writes
-
-    ranking_<dataset>.csv       per policy, the mean over seeds of every reported column and the
-                                paired comparison against no maintenance, see below
-    wins_<dataset>.csv          per pair, on how many seeds the row policy beats the column one
-    centroid_sensitivity.csv    the query cost at the calibrated centroid price and at a price of 1
-    tombstone_<dataset>.csv     the same ranking under the SPFresh delete model, see below
-    equal_k_<dataset>.csv       each policy's own index against a fresh build at its own K, so how
-                                it maintains is read apart from the K it reaches
-    control_<dataset>.csv       a control run from --control, paired with the policy it controls on
-                                the same seed, the rebuild at the bandit's K
-    frontier.pdf, frontier.png  query cost against maintenance work, one panel per dataset
-
-Efficiency is the query cost a policy saved against no maintenance over the whole workload,
-divided by the work it spent, so a unit of maintenance is judged by what it bought. The break even
-read rate is how many queries per update it takes before that saving repays the work, infinite
-when there is no saving.
-
-The reported delete model removes a deleted vector at once, as Quake and Faiss do, so the query
-cost reads live vectors and the work leaves out compaction, which gains nothing under that model.
-The SPFresh model, where a deleted vector is scanned until compaction removes it, is the
-sensitivity check beside it.
-
-What is reported, and how it is compared, was fixed before the main runs. The main result is the
-end of run query cost at recall 0.9. Each query cost is compared with no maintenance within one
-dataset and seed as a log ratio, then over seeds with a paired t interval, every per seed value
-and the count of seeds below no maintenance. The ranking is ordered by that paired ratio, and
-datasets are never pooled.
-"""
+"""Tables and figures from the main results."""
 
 from __future__ import annotations
 
@@ -53,7 +20,7 @@ from scipy import stats  # noqa: E402
 from src.calibration import prices  # noqa: E402
 
 DIMS = {"sift1m": 128, "gist1m": 960}
-# the main result first, then the readings reported beside it
+# main result first, then the extra readings
 PAIRED_COLS = ("query_cost", "query_cost_mean", "query_cost_r80", "query_cost_r95",
                "query_cost_rebuilt_k")
 RANKING_COLS = ["query_cost", "query_cost_mean", "served_query_cost", "work_calibrated",
@@ -66,11 +33,7 @@ LABELS = {"no_op": "no maintenance", "global_rebuild": "global rebuild", "lire_l
 
 
 def load(sweep: Path) -> dict[str, pd.DataFrame]:
-    """Read every result file in `sweep`, one table per dataset.
-
-    Stops if a run appears twice or a policy carries two fingerprints, which would mean rows from
-    different code versions.
-    """
+    """Read every result file in `sweep`, one table per dataset."""
     out = {}
     for ds in DIMS:
         tag = "sift" if ds == "sift1m" else "gist"
@@ -89,20 +52,14 @@ def load(sweep: Path) -> dict[str, pd.DataFrame]:
 
 
 def enrich(d: pd.DataFrame, dim: int) -> pd.DataFrame:
-    """Add the columns derived against no maintenance on the same seed.
-
-    These are the total saving, the efficiency, the break even read rate and the totals relative
-    to no maintenance. Efficiency and the break even rate cover the whole workload, so they use
-    the mean query cost over the run, not the end of run value.
-    """
+    """Add the columns derived against no maintenance on the same seed."""
     d = d.copy()
     base = d[d.maintainer == "no_op"].set_index("seed")
     updates = d.inserts + d.deletes
     saved = d.seed.map(base.query_cost_mean) - d.query_cost_mean
     d["saved_total"] = saved * d.queries_served
     d["efficiency"] = np.where(d.work_calibrated > 0, d.saved_total / d.work_calibrated, np.nan)
-    # infinite only for a saving that was measured and is not positive. a seed with no row for no
-    # maintenance has no saving at all, which is left missing
+    # inf when the saving is not positive, missing when there is no no_op row
     d["break_even_reads"] = np.where(saved.isna(), np.nan,
                                      np.where(saved > 0, d.work_calibrated / (updates * saved),
                                               np.inf))
@@ -114,13 +71,7 @@ def enrich(d: pd.DataFrame, dim: int) -> pd.DataFrame:
 
 
 def paired_vs_no_op(d: pd.DataFrame, col: str = "query_cost") -> pd.DataFrame:
-    """Compare every policy with no maintenance on the same seed, for one cost column.
-
-    Per seed, the log of a policy's cost over that of no maintenance, then the mean over seeds
-    with a paired t interval and the count of seeds below no maintenance. The log makes a saving
-    and a loss by the same factor symmetric and removes the level each seed sets. With five seeds,
-    even five of five below is an exact two sided sign test p of 0.0625.
-    """
+    """Compare every policy with no maintenance on the same seed, for one cost column."""
     p = d.pivot(index="seed", columns="maintainer", values=col)
     return summarise(np.log(p.div(p["no_op"], axis=0)), col, f"{col}_vs_no_op")
 
@@ -131,10 +82,7 @@ def _pct(x):
 
 
 def summarise(logs: pd.DataFrame, prefix: str, head: str) -> pd.DataFrame:
-    """Summarise log ratios per seed as a mean with a paired t interval, all in percent.
-
-    Also returns the count of seeds below zero and every per seed value.
-    """
+    """Mean and paired t interval of per-seed log ratios, in percent."""
     n = logs.notna().sum()
     mean = logs.mean()
     half = stats.t.ppf(0.975, n - 1) * logs.std(ddof=1) / np.sqrt(n)
@@ -147,22 +95,14 @@ def summarise(logs: pd.DataFrame, prefix: str, head: str) -> pd.DataFrame:
 
 
 def equal_k(d: pd.DataFrame) -> pd.DataFrame:
-    """Compare each policy's own index with a fresh exact k-means at the K it ended at.
-
-    How well a policy maintains is then read apart from the K it reaches. Below zero means its own
-    index is cheaper than the fresh build.
-    """
+    """Compare each policy's own index with a fresh exact k-means at the K it ended at."""
     p = d.pivot(index="seed", columns="maintainer", values="query_cost")
     f = d.pivot(index="seed", columns="maintainer", values="query_cost_rebuilt_k")
     return summarise(np.log(p / f), "own_vs_fresh", "own_vs_fresh")
 
 
 def control(d: pd.DataFrame, name: str, ref: str) -> pd.DataFrame:
-    """Compare a control run with a reference policy on the same seed.
-
-    The comparison covers the end of run query cost, the mean over the run and the work, each
-    summarised as log ratios.
-    """
+    """Compare a control run with a reference policy on the same seed."""
     rows = []
     for col in ("query_cost", "query_cost_mean", "work_calibrated"):
         p = d.pivot(index="seed", columns="maintainer", values=col)[[name, ref]].dropna()
@@ -175,19 +115,14 @@ def control(d: pd.DataFrame, name: str, ref: str) -> pd.DataFrame:
 
 
 def tombstone(d: pd.DataFrame) -> pd.DataFrame:
-    """Return the ranking under the SPFresh delete model, tombstones scanned, means over seeds."""
+    """Ranking under the SPFresh delete model."""
     cols = ["query_cost_stored", "stored_vs_no_op", "work_calibrated_tombstone",
             "total_compute_tombstone", "total_tomb_vs_no_op", "stored", "live"]
     return d.groupby("maintainer")[cols].mean().sort_values("query_cost_stored")
 
 
 def ranking(d: pd.DataFrame, cols: list[str] | None = None) -> pd.DataFrame:
-    """Return the mean over seeds of every reported column, with the paired comparisons.
-
-    The order is the paired ratio of the main result against no maintenance. The mean absolute
-    cost is not used as the order, because a seed where every method is expensive would dominate
-    it.
-    """
+    """Mean over seeds of every column, with the paired comparisons."""
     cols = [c for c in (cols or RANKING_COLS) if c in d.columns]
     g = d.groupby("maintainer")
     t = g[cols].mean()
@@ -206,11 +141,7 @@ def wins(d: pd.DataFrame, col: str = "query_cost") -> pd.DataFrame:
 
 
 def centroid_sensitivity(d: pd.DataFrame, ds: str, calibrated: float) -> pd.DataFrame:
-    """Recompute the query cost at the calibrated centroid price and at a price of 1, and rank both.
-
-    The centroid term grows with K, so it is the price a ranking between methods that reach
-    different K depends on.
-    """
+    """Rank the policies with the centroid price and with a price of 1."""
     rows = []
     for label, c in (("calibrated", calibrated), ("1", 1.0)):
         q = d.priced_scan + c * d.parts
@@ -222,7 +153,7 @@ def centroid_sensitivity(d: pd.DataFrame, ds: str, calibrated: float) -> pd.Data
 
 
 def frontier(tables: dict[str, pd.DataFrame], data: dict[str, pd.DataFrame], out: Path) -> None:
-    """Plot query cost against maintenance work, one panel per dataset, the range over seeds as bars."""
+    """Plot query cost against maintenance work."""
     fig, axes = plt.subplots(1, len(tables), figsize=(6.2 * len(tables), 4.8), squeeze=False)
     for ax, (ds, t) in zip(axes[0], tables.items(), strict=True):
         d = data[ds]
@@ -250,8 +181,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sweep", type=Path, default=Path("results/raw/final_2709"))
     ap.add_argument("--out", type=Path, default=Path("results/final_2709"))
-    # the rebuild at the own K of the bandit on each seed, scripts/control_rebuild_at_k.py. pass a
-    # folder that does not exist to leave it out
+    # control run folder, a missing folder skips it
     ap.add_argument("--control", type=Path, default=Path("results/raw/control_2809"))
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
@@ -287,8 +217,7 @@ def main() -> None:
             print(ek.round(1).to_string())
         if ds in controls:
             c = controls[ds]
-            # the control is the rebuild at the K the bandit of these runs reached, so pairing it
-            # with a bandit from another set of runs would compare two different K
+            # the control must come from the same set of runs
             b = d[d.maintainer == "bandit"].set_index("seed").parts
             k = c.set_index("seed").parts
             if not (k == b.reindex(k.index)).all():

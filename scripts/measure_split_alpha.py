@@ -1,24 +1,4 @@
-"""Measure alpha, the share of a parent's access each child of a split receives, Quake equation 6.
-
-    python scripts/measure_split_alpha.py --dataset sift1m --seed 42
-
-Quake estimates the cost change of splitting a partition as
-
-    delta Split = delta O+ - A * lambda(s) + 2 * alpha * A * lambda(s / 2)
-
-where alpha is the share of the parent's access each of the two children is expected to get.
-Quake publishes alpha = 0.9. Here alpha is not left as an assumption, it is measured. A query
-probes the nprobe nearest centroids, so a partition can be split and the same queries routed again,
-counting how much of the parent's access the children actually receive.
-
-    alpha = (A_left + A_right) / (2 * A_parent)
-
-Routing depends only on centroids, so the reassignment after a split, which moves vectors without
-moving centroids, cannot change this measurement. It is applied anyway so the split is the full
-operation. The measurement uses an index built with k-means on a random fifth of the dataset,
-before the starting index of the main runs existed, and it gave 0.862, 0.862 and 0.824 on SIFT and
-0.880 on GIST, pooled as 0.86 in config.SPLIT_ACCESS_ALPHA.
-"""
+"""Measure alpha, the access share each half keeps after a split."""
 
 from __future__ import annotations
 
@@ -48,16 +28,11 @@ from src.maintainers.base import (  # noqa: E402
 
 
 def route_all(index: IVFIndex, queries: np.ndarray, nprobe: int) -> list[np.ndarray]:
-    """Return the probed partition ids of every query, computed for all queries at once.
-
-    Only the set of probed partitions matters here, so the order within each set may differ from
-    `IVFIndex._nearest_partitions`.
-    """
+    """Probed partitions of every query."""
     matrix, order = index._get_centroid_matrix()
     order_arr = np.asarray(order)
 
-    # squared distance by expansion. the query norm is the same for every centroid of a row, so it
-    # does not affect the ranking
+    # squared distance, query norm dropped
     cent_sq = np.einsum("ij,ij->i", matrix, matrix)
     cross = queries @ matrix.T
     sq_dists = cent_sq[None, :] - 2.0 * cross
@@ -92,12 +67,12 @@ def build_query_pool(
     queries: np.ndarray, mode: str, seed: int, n_queries: int,
     hot_fraction: float, hot_prob: float,
 ) -> np.ndarray:
-    """Return the query pool, concentrated near one query or uniform as a robustness check."""
+    """Query pool, concentrated or uniform."""
     qrng = np.random.default_rng(seed + 7)
     if mode == "uniform":
         return queries[qrng.integers(0, len(queries), n_queries)]
 
-    # concentrated, `hot_prob` of the queries from the `hot_fraction` nearest to the first query
+    # hot_prob of the queries come from the hot_fraction nearest the first query
     n_hot = max(1, int(len(queries) * hot_fraction))
     d0 = np.linalg.norm(queries - queries[0], axis=1)
     hot_q_idx = np.argsort(d0)[:n_hot]
@@ -111,7 +86,7 @@ def build_query_pool(
 
 
 def pick_candidates(index: IVFIndex, n_candidates: int, min_size: int) -> list[int]:
-    """Return partitions spread across the size range, so alpha is not read off one size alone."""
+    """Pick partitions across the size range."""
     sized = sorted(
         ((pid, p.size()) for pid, p in index.partitions.items() if p.size() >= min_size),
         key=lambda t: t[1],
@@ -128,22 +103,19 @@ def measure_one(
     index: IVFIndex, pid: int, queries: np.ndarray, nprobe: int,
     before_probes: list[np.ndarray], seed: int, boundary_top_k: int,
 ) -> dict | None:
-    """Split one partition on a copy of the index and measure the access its children get.
-
-    Returns None for a partition no query probed, or one whose split put everything on one side.
-    """
+    """Split one partition on a copy and measure its children's access."""
     n_queries = len(queries)
     a_before = access_counts(before_probes, n_queries)
     parent_access = a_before.get(pid, 0.0)
     if parent_access <= 0.0:
-        return None  # never probed, so alpha is undefined for it
+        return None  # never probed
 
     work = copy.deepcopy(index)
     parent_size = work.partitions[pid].size()
 
     children = split_partition_2means(work.partitions[pid], random_state=seed)
     if len(children) < 2:
-        return None  # 2-means put everything in one cluster
+        return None  # 2-means made one cluster
 
     neighbors = top_k_nearest_partitions(
         work, work.partitions[pid].centroid, boundary_top_k, exclude={pid}
@@ -156,7 +128,7 @@ def measure_one(
     a_after = access_counts(after_probes, n_queries)
     child_access = sum(a_after.get(c, 0.0) for c in new_pids)
 
-    # of the queries that probed the parent, how many now probe both children, one, or neither
+    # how many parent queries now probe both, one or no children
     child_set = set(new_pids)
     hits = [len(child_set & set(after.tolist()))
             for before, after in zip(before_probes, after_probes, strict=True)
@@ -196,7 +168,7 @@ def main() -> None:
 
     base, queries, _ = load_sift1m() if args.dataset == "sift1m" else load_gist1m()
 
-    # a k-means index on a random share of the dataset, about 100 vectors per partition
+    # k-means index, about 100 vectors per partition
     iv, ii, _, _ = split_base_for_streaming(
         base, initial_fraction=args.initial_fraction, seed=args.seed)
     n_part = min(DEFAULT_PARTITIONS, max(2, len(iv) // 100))
@@ -247,8 +219,7 @@ def main() -> None:
     print(f"  both children probed   {df['frac_probing_both'].mean():.3f}")
     print(f"  one child probed       {df['frac_probing_one'].mean():.3f}")
     print(f"  neither child probed   {df['frac_probing_neither'].mean():.3f}")
-    # 0.5 is what dividing the access of the parent between the children would give, the value this
-    # code assumed before alpha was measured
+    # 0.5 is an even split of the parent access
     print("\nours assumes 0.5, Quake reference implementation uses 0.9")
     print(f"wrote {args.output}")
 

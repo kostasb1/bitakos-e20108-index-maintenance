@@ -1,26 +1,11 @@
-"""The control run, the global rebuild at the partition count the bandit ended at on the same seed.
-
-    python scripts/control_rebuild_at_k.py --seeds 42 1 7 13 23
-
-The policies that keep K fixed hold about 176 partitions on SIFT, while the bandit grows to 408 to
-546, so part of the bandit's lead may be the K it reaches rather than how it maintains partitions.
-This runs the unmodified global rebuild on its usual trigger, with the partition count set to the
-bandit's final K for each seed, so its query cost at every reading and the work a rebuild at that
-K spends are both measured, through the same `final_sweep.run_one_staple` as every other run. The
-bandit's final K per seed is read from the main results in results/raw/final_2709.
-
-It is a control, not one of the compared policies. Its purpose was fixed before it ran, and its
-result is reported whichever way it came out. The configuration is added from outside, by
-extending the list of allowed names and wrapping `final_sweep.build`, so no other file changes.
-Results go to results/raw/control_2809.
-"""
+"""Control run, global rebuild at the bandit's final partition count."""
 from __future__ import annotations
 
 import os
 import sys
 from pathlib import Path
 
-# the same thread pinning as final_sweep, set here too so it holds whatever the import order
+# pin threads, as in final_sweep
 for _thread_var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
     os.environ[_thread_var] = "1"
 
@@ -58,7 +43,7 @@ def main() -> None:
     orig = fs.build
 
     def build(name, seed, hi, lo, cost_model):
-        """Build the control under its own name, and every other policy as final_sweep does."""
+        """Build the control policy, or any other as final_sweep does."""
         if name == NAME:
             return GlobalRebuildMaintainer(n_partitions=ks[seed], seed=seed)
         return orig(name, seed, hi, lo, cost_model)

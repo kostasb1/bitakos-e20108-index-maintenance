@@ -1,13 +1,4 @@
-"""The figures of the thesis, in English and Greek, written to scripts/figures.
-
-    python scripts/make_figures.py
-
-The first five are illustrations on synthetic data or plots of the stored Faiss price list in
-results/cost_model/query_cost_calibration.yaml. The last three read the result files of the main
-runs, the half size runs and the K curve, so those must exist under results/. The script also
-prints the worked numbers the thesis quotes for Quake's split threshold, so the text can be
-checked against the code.
-"""
+"""The figures of the thesis, in English and Greek, written to scripts/figures."""
 
 from __future__ import annotations
 
@@ -72,12 +63,12 @@ TEXT = {
 
 
 def fig_ivf(lang):
-    """Draw a two dimensional IVF example, partitions, centroids and the two a query opens."""
+    """Draw a small 2-D IVF example."""
     t = TEXT[lang]
     rng = np.random.default_rng(3)
     centres = np.array([[1, 1], [4, 1.2], [2.5, 3.6], [5.6, 3.4], [0.8, 4.2], [4.2, 5.4]])
     pts = np.vstack([c + rng.normal(0, 0.55, (28, 2)) for c in centres])
-    # a few Lloyd iterations so the shown centroids are real means of their cells
+    # a few Lloyd iterations so centroids are real means
     cen = centres.copy()
     for _ in range(10):
         lab = np.argmin(((pts[:, None] - cen[None]) ** 2).sum(-1), axis=1)
@@ -98,7 +89,7 @@ def fig_ivf(lang):
     ax.set_yticks([])
     ax.set_xlim(-0.8, 7.2)
     ax.set_ylim(-0.8, 6.8)
-    # no title, the caption carries the legend, and the Greek title did not fit the width
+    # no title, the caption has it
     fig.tight_layout()
     fig.savefig(OUT / f"ivf_{lang}.png")
     plt.close(fig)
@@ -107,7 +98,7 @@ def fig_ivf(lang):
 def fig_pipeline(lang):
     """Draw the pipeline of one experiment, from the dataset to the scoring."""
     t = TEXT[lang]
-    # two rows of three boxes, so the Greek labels fit at a readable size
+    # two rows so the Greek labels fit
     fig, ax = plt.subplots(figsize=(6.6, 3.3))
     ax.axis("off")
     w, h, gx, gy = 1.9, 0.8, 0.45, 0.75
@@ -121,13 +112,11 @@ def fig_pipeline(lang):
     for k in range(2):
         ax.annotate("", xy=((k + 1) * (w + gx), top + h / 2), xytext=(k * (w + gx) + w, top + h / 2),
                     arrowprops=arrow)
-    # down from the starting index to the stream, then leftwards along the bottom row
     xr = 2 * (w + gx) + w / 2
     ax.annotate("", xy=(xr, bot + h), xytext=(xr, top), arrowprops=arrow)
     for k in (2, 1):
         ax.annotate("", xy=((k - 1) * (w + gx) + w, bot + h / 2), xytext=(k * (w + gx), bot + h / 2),
                     arrowprops=arrow)
-    # the loop between the policy and the stream
     xs, xp = 2 * (w + gx) + w / 2, 1 * (w + gx) + w / 2
     ax.annotate("", xy=(xs - 0.3, bot), xytext=(xp + 0.3, bot),
                 arrowprops={**arrow, "connectionstyle": "arc3,rad=0.45"})
@@ -143,7 +132,7 @@ def fig_retention(lang):
     """Draw the retention window, each batch expiring 50 time steps after it arrives."""
     t = TEXT[lang]
     fig, ax = plt.subplots(figsize=(6.4, 3.0))
-    # the starting index expires over the first 50 timesteps, drawn as a shrinking band
+    # starting index expires over the first 50 steps
     ax.fill_between([0, 50], [-0.3, -0.3], [0.9, -0.3], color="#bbbbbb", ec="black", lw=0.6)
     ax.text(12, 0.05, t["staple"], ha="left", va="center", fontsize=8)
     for row, start in enumerate(range(0, 100, 12), start=1):
@@ -191,7 +180,7 @@ def fig_list_price(lang):
 
 
 def fig_quake_threshold(lang):
-    """Plot the smallest access fraction at which Quake splits a partition of each size."""
+    """Plot the smallest access fraction at which Quake splits."""
     t = TEXT[lang]
     fig, ax = plt.subplots(figsize=(6.2, 3.8))
     sizes = np.arange(100, 1601, 10)
@@ -200,10 +189,10 @@ def fig_quake_threshold(lang):
     for (dim, tau), (ls, label) in styles.items():
         cm = lambda_from_prices(CAL[dim]["median"])
         lam = cm.scan_latency
-        # delta C = A (2 alpha lam(s/2) - lam(s)) + one more centroid to rank, split if < -tau
+        # split if delta C < -tau
         gain = np.array([lam(int(s)) - 2 * SPLIT_ACCESS_ALPHA * lam(int(s) // 2) for s in sizes])
         amin = (tau + cm.centroid_ns) / gain
-        # above 1 no access fraction can clear tau, the rule never splits there
+        # above 1 the rule never splits
         amin[(gain <= 0) | (amin > 1.0)] = np.nan
         ax.plot(sizes, amin, ls=ls, color="black", lw=1.1, label=label)
     ax.set_yscale("log")
@@ -216,7 +205,7 @@ def fig_quake_threshold(lang):
     plt.close(fig)
 
 
-# figures of the final results, read from the result files of the three sets of runs
+# result figures
 
 RAW = ROOT / "results" / "raw"
 ORDER = ["global_rebuild", "lire_lite", "dedrift_lazy", "dedrift_split", "dedrift_hybrid",
@@ -244,7 +233,7 @@ RTEXT = {
 
 
 def runs(sweep, tag):
-    """Read the result rows of one set of runs and add the change against no maintenance, in percent."""
+    """Read the result rows and add the change against no maintenance."""
     import pandas as pd
     d = pd.concat([pd.read_csv(f) for f in sorted((RAW / sweep).glob(f"{tag}_*.csv"))])
     base = d[d.maintainer == "no_op"].set_index("seed").query_cost
@@ -259,8 +248,8 @@ def summary(sweep_dir, dataset):
 
 
 def _dotpanel(ax, series, lang, show_labels):
-    """Draw per seed changes as dots and the mean with its interval, one row per policy."""
-    # each entry of series is the run rows, the summary, the marker, its fill, a vertical offset and a label
+    """Draw one panel of per-seed dots and means."""
+    # series holds rows, summary, marker, fill, offset and label
     ys = {m: i for i, m in enumerate(ORDER[::-1])}
     for d, s, mk, face, off, lab in series:
         for m in ORDER:
@@ -280,7 +269,7 @@ def _dotpanel(ax, series, lang, show_labels):
 
 
 def fig_results_change(lang):
-    """Plot the change in query cost against no maintenance, SIFT at both sizes and GIST."""
+    """Plot the change in query cost against no maintenance."""
     t = RTEXT[lang]
     sift, sift_h, gist = runs("final_2709", "sift"), runs("sens_ta50_2709", "sift"), runs("final_2709", "gist")
     s_sift, s_half = summary("final_2709", "sift1m"), summary("sens_ta50_2709", "sift1m")
@@ -324,7 +313,7 @@ def fig_results_frontier(lang):
 
 
 def fig_k_curve(lang):
-    """Plot the query cost of fresh builds against the partition count, as a multiple of the start."""
+    """Plot query cost of fresh builds against partition count."""
     import pandas as pd
     t = RTEXT[lang]
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
@@ -361,7 +350,7 @@ if __name__ == "__main__":
         fig_results_change(lang)
         fig_results_frontier(lang)
         fig_k_curve(lang)
-    # the worked numbers the text quotes, printed so the prose can be checked against the code
+    # numbers quoted in the text
     for dim in (128, 960):
         cm = lambda_from_prices(CAL[dim]["median"])
         lam = cm.scan_latency

@@ -1,16 +1,4 @@
-"""The bandit policy, a contextual bandit that picks one of five actions for each partition.
-
-`maintain` is one pass. Every partition is a trial, with a six number context, the set of actions
-its guards allow, a LinUCB choice, the action, and a reward from the change in the total Quake cost.
-
-The constructor carries options for experiments. The reported configuration is set in
-`scripts/final_sweep.build`, which passes the starting index thresholds, a minimum split size of
-100, every partition as a candidate, discounting once per pass, and a coverage penalty weight of
-2.0. The parameter named `alpha` here is the exploration weight of LinUCB, written beta in the
-thesis, and is unrelated to SPLIT_ACCESS_ALPHA. These options are off in the reported runs, the
-query grounded reward, the do no harm margin, cooldowns, the recency feature, the potential based
-reward and the warm start.
-"""
+"""The bandit policy, choosing one of five actions per partition."""
 
 from __future__ import annotations
 
@@ -66,8 +54,7 @@ class Action(IntEnum):
 
 _N_ARMS: int = len(Action)
 
-# the weight of each action on the vectors it touches, in the action cost, divided by the split
-# threshold in _action_cost
+# action weights for the action cost
 _ACTION_COST_MULTIPLIER: dict[int, float] = {
     Action.SPLIT: 2.0,
     Action.MERGE: 1.5,
@@ -121,22 +108,13 @@ class BanditMaintainer(Maintainer):
         discount_mode: str = "arm",
         warm_start: bool = False,
     ) -> None:
-        """Create the policy.
-
-        The main parameters are `alpha`, the exploration weight, `discount`, the forgetting
-        factor of the learner, `access_decay`, the factor the access counts are multiplied by each
-        pass, `n_explore`, the number of random decisions at the start, `cost_model`, the scan
-        cost curve the reward is priced with, the split and merge thresholds, `min_split_size`,
-        and `coverage_penalty_weight`. `n_candidates` None makes every partition a candidate.
-        """
+        """Create the policy."""
         super().__init__(check_interval=check_interval)
-        # the nprobe used to turn probe counts into the access fraction when no routed query
-        # count exists. separate from eval_nprobe, which belongs to the optional query reward
+        # nprobe for the access fraction fallback
         self.nprobe = nprobe
         self.use_recency_feature = use_recency_feature
         self.context_dim = CONTEXT_DIM + (1 if use_recency_feature else 0)
-        # "pass" discounts every action once per maintenance pass, as D-LinUCB discounts every
-        # round, and is what the reported runs use. "arm" with no warm start is the earlier agent
+        # discount every action once per pass
         self.discount_mode = discount_mode
         self.warm_start = warm_start
         self._warmed = False
@@ -151,42 +129,40 @@ class BanditMaintainer(Maintainer):
                 lambdas=ARROW_LAMBDAS if warm_start else (1.0,),
             )
         if warm_start:
-            # a warm start replaces the random decisions at the start, and the confidence bonus
-            # does the exploring from there
+            # warm start replaces the random start
             n_explore = 0
         self.access_decay = access_decay
         self.n_candidates = n_candidates
         self.n_explore = n_explore
         self.drift_fraction = drift_fraction
         self.drift_threshold = drift_threshold
-        # the cost model the reward prices actions with, Quake equation 1. without one the reward
-        # uses access times size
+        # Quake cost model for the reward
         self.cost_model = cost_model
         self.max_partition_size = max_partition_size
         self.min_partition_size = min_partition_size
-        # no split below this size, so the cost cannot be lowered by fragmenting the index
+        # no split below this size
         self.min_split_size = min_split_size
-        # an extra split cost once the partitions are on average smaller than min_split_size
+        # extra split cost for small partitions
         self.frag_penalty_weight = frag_penalty_weight
         self._frag_overhead: float = 0.0
         self._rng = np.random.default_rng(seed)
         self.action_counts: dict[str, int] = {a.name: 0 for a in Action}
-        # the query grounded reward, off unless eval_queries is given
+        # optional query reward, off by default
         self.eval_queries = eval_queries
         self.eval_k = eval_k
         self.eval_nprobe = eval_nprobe
         self.recall_penalty_weight = recall_penalty_weight
-        # the do no harm margin, off unless given, acts only if the predicted reward exceeds it
+        # optional margin, off by default
         self.act_margin = act_margin
         self.min_partitions = min_partitions
         self.max_partitions = max_partitions
-        # the penalty on splits that discourages fragmenting an index that is already fine
+        # split penalty
         self.coverage_penalty_weight = coverage_penalty_weight
-        # cooldowns, off when cooldown_base is 0, block reversing a recent split or merge
+        # cooldowns, off by default
         self.cooldown_base = cooldown_base
         self.cooldown_min = cooldown_min
         self.cooldown_change_frac = cooldown_change_frac
-        # a softer alternative to the cooldown, which penalises a reversal instead of blocking it
+        # reversal penalty, off by default
         self.reversal_penalty_weight = reversal_penalty_weight
         self.recency_window = recency_window
         self._track_actions = bool(cooldown_base > 0 or reversal_penalty_weight > 0
@@ -197,28 +173,21 @@ class BanditMaintainer(Maintainer):
         self._total_splits = 0
         self._total_merges = 0
         self._reversals = 0
-        # the potential based reward, off unless asked for
+        # potential based reward, off by default
         self.potential_reward = potential_reward
         self.potential_cost_weight = potential_cost_weight
         self._phi_scale = 1.0
-        # the combined state of both partitions before a merge, set by _do_merge and read by
-        # maintain
+        # state before a merge
         self._merge_before: PartitionSnapshot | None = None
-        # how many nearest partitions a merge looks through for a partner that fits
+        # merge partner candidates
         self.merge_candidates = merge_candidates
         self.reward_clip = reward_clip
-        # actions that turned out to change nothing are neither rewarded nor learned from, and
-        # are counted here instead
+        # actions that changed nothing, not learned from
         self.refused_counts: dict[str, int] = {a.name: 0 for a in Action}
         self._last_refused = False
 
     def should_maintain(self, index: IVFIndex, step: int) -> bool:
-        """Return True if a partition is over the split threshold, under the merge threshold or
-        empty, or if the mean centroid drift is over the drift limit.
-
-        Reading the mean drift recomputes the mean of every changed partition, which is charged as
-        work, directly to the running total since no report exists yet.
-        """
+        """Act when a partition is too big, too small or empty, or drift is too high."""
         self._cumulative_work += sum(p.size() for p in index.partitions.values()
                                      if p._cached_true_mean is None or p._dirty)
         stats = index.stats()
@@ -229,14 +198,13 @@ class BanditMaintainer(Maintainer):
         return any(p.size() < self.min_partition_size for p in index.partitions.values())
 
     def maintain(self, index: IVFIndex) -> MaintenanceReport:
-        """Run one pass, choosing, applying and learning from one action per candidate partition."""
+        """Run one pass, one action per candidate partition."""
         report = MaintenanceReport(triggered=True)
-        # first, so no decision is spent on an empty partition and the context is not computed
-        # against dead centroids
+        # remove empty partitions first
         report.num_collected += len(collect_empty_partitions(index))
         for p in index.partitions.values():
             p.decay_access(self.access_decay)
-        # the query count decays together with the access counts it divides
+        # decay the query count too
         index.queries_routed *= self.access_decay
         stats = index.stats()
         self._now_ops = index._total_inserts + index._total_deletes
@@ -264,8 +232,7 @@ class BanditMaintainer(Maintainer):
                 continue
 
             partition = index.partitions[pid]
-            # earlier actions in this pass changed the index, so the averages the context divides
-            # by are recomputed for each candidate
+            # recompute averages for each candidate
             _live = sum(p.size() for p in index.partitions.values())
             _n = len(index.partitions)
             cur_stats = replace(
@@ -274,11 +241,10 @@ class BanditMaintainer(Maintainer):
                 live_vectors=_live,
                 mean_partition_size=(_live / _n) if _n else 0.0,
             )
-            # the total access count, which an earlier split in this pass may have changed
+            # total access count
             _total_access = sum(p.access_count for p in index.partitions.values())
             _drift_scale = drift_limit(index, self.drift_fraction, self.drift_threshold)
-            # reading the drift of a changed partition recomputes its mean, one read of each of
-            # its vectors, which is charged
+            # reading drift is charged
             if partition._cached_true_mean is None or partition._dirty:
                 report.vectors_processed += partition.size()
             context = extract_context(
@@ -289,7 +255,6 @@ class BanditMaintainer(Maintainer):
             if self.use_recency_feature:
                 context = np.append(context, self._signed_recency(pid, partition))
 
-            # finding the allowed actions is charged too, see _available_arms
             available = self._available_arms(pid, partition, index, meter=report)
             if self.agent.total_updates < self.n_explore:
                 arm = int(available[int(self._rng.integers(0, len(available)))])
@@ -306,7 +271,7 @@ class BanditMaintainer(Maintainer):
             self._merge_before = None
 
             if action == Action.NO_OP:
-                # nothing changes, so the reward is zero in every form
+                # nothing changes, zero reward
                 after_partitions = self._execute(action, pid, index, report)
                 reward = 0.0
             elif self.potential_reward:
@@ -329,9 +294,7 @@ class BanditMaintainer(Maintainer):
                     0.0, (dist_a - dist_b) / max(dist_b, 1e-9))
                 reward = cost_reduction - quality_penalty - 0.1 * cost
             else:
-                # the reported reward. the cost term is the change in the total Quake cost C
-                # across the action, so the neighbours a split takes vectors from and the centroid
-                # it adds are both priced, see reward.index_cost
+                # reward from the change in Quake cost
                 c_before = index_cost(index, self.cost_model, self.nprobe)
                 scale = self._cost_scale(index, c_before)
                 after_partitions = self._execute(action, pid, index, report)
@@ -344,14 +307,12 @@ class BanditMaintainer(Maintainer):
                     delta_index_cost=index_cost(index, self.cost_model, self.nprobe) - c_before,
                     cost_scale=scale,
                     clip=self.reward_clip,
-                    # only an action that keeps the same members can be credited for closing drift,
-                    # see compute_reward
+                    # drift credit only for the same members
                     drift_credit=action in (Action.CENTROID_UPDATE, Action.COMPACT),
                 )
 
             if self._last_refused:
-                # a guard inside the action refused it, so nothing happened and there is nothing
-                # to learn
+                # action refused, nothing to learn
                 self.refused_counts[action.name] += 1
                 continue
 
@@ -359,7 +320,7 @@ class BanditMaintainer(Maintainer):
                     and len(after_partitions) > 1):
                 reward -= self.coverage_penalty_weight * self._frag_overhead
             reward -= rev_penalty
-            # the penalties come after compute_reward clipped the reward, so it is clipped again
+            # clip again after the penalties
             if self.reward_clip is not None:
                 reward = max(-self.reward_clip, min(self.reward_clip, reward))
 
@@ -371,13 +332,7 @@ class BanditMaintainer(Maintainer):
         return report
 
     def _select_candidates(self, index: IVFIndex) -> list[int]:
-        """Return the partitions to decide on in this pass.
-
-        With `n_candidates` None, which the reported runs use, that is every partition, as Quake
-        considers every partition each pass. Otherwise it is the top ones by (1 + access) times
-        size, plus a few of the smallest partitions under the merge threshold, so the merge action
-        sees the partitions it is meant for.
-        """
+        """Return the partitions to decide on in this pass."""
         pids = index.partition_ids()
         if not pids:
             return []
@@ -407,10 +362,7 @@ class BanditMaintainer(Maintainer):
         return candidates
 
     def _eval_cost_quality(self, index: IVFIndex) -> tuple[float, float]:
-        """Return the mean vectors scanned and the mean neighbour distance on the evaluation queries.
-
-        Used only by the optional query grounded reward. Lower is better for both.
-        """
+        """Mean scanned vectors and neighbour distance on the evaluation queries."""
         results = index.search_batch(
             self.eval_queries, self.eval_k, self.eval_nprobe, record_access=False)
         dists = [d for res in results for (_, d) in res]
@@ -419,12 +371,7 @@ class BanditMaintainer(Maintainer):
         return cost, quality
 
     def _warm_start(self, index: IVFIndex, stats, report) -> None:
-        """Give the learner estimated rewards for every partition and action before it acts.
-
-        This is the warm start of ARROW-CB, built from the running index and the cost model. For
-        every partition and every action it could take, the reward is estimated without acting,
-        on the same scale as the real reward, see `_whatif`. Not used by the reported runs.
-        """
+        """Give the learner estimated rewards before it acts."""
         n = max(1, len(index.partitions))
         live = sum(p.size() for p in index.partitions.values())
         cur = replace(stats, num_partitions=n, live_vectors=live, mean_partition_size=live / n)
@@ -459,11 +406,7 @@ class BanditMaintainer(Maintainer):
     def _whatif(self, action: Action, pid: int, p: Partition, index: IVFIndex, access: float,
                 scale: float, avg_access: float, avg_size: int, drift_scale: float,
                 meter=None) -> float:
-        """Estimate the reward an action would earn, without taking it.
-
-        Refresh, compaction and no action are estimated exactly. A split is priced with Quake
-        equation 6 and a merge with Quake's uniform delete estimate, which are approximations.
-        """
+        """Estimate the reward an action would earn, without taking it."""
         if action == Action.NO_OP:
             return 0.0
         lam = self.cost_model.scan_latency if self.cost_model else float
@@ -505,12 +448,7 @@ class BanditMaintainer(Maintainer):
         return max(-self.reward_clip, min(self.reward_clip, r))
 
     def _cost_scale(self, index: IVFIndex, c_before: float) -> float:
-        """Return the unit the cost change is measured in, the mean scan cost per partition.
-
-        That is the scan part of C divided by K. Dividing by the acted partition's own cost
-        instead would divide by nearly zero for a partition queries rarely reach. Before any query
-        has been counted the scan part is zero, so nprobe partitions of the mean size are used.
-        """
+        """Mean scan cost per partition."""
         lam = self.cost_model.scan_latency if self.cost_model else float
         lam_c = self.cost_model.centroid_latency if self.cost_model else float
         k = max(1, len(index.partitions))
@@ -522,11 +460,7 @@ class BanditMaintainer(Maintainer):
 
     def _merge_target(self, pid: int, partition: Partition, index: IVFIndex,
                       meter=None) -> int | None:
-        """Return the merge partner, the nearest partition whose combined size fits, or None.
-
-        As in SPFresh section 3.2, the nearest partitions are tried in order. With cooldowns on, a
-        partition that was just split off is skipped, since merging with it would undo that split.
-        """
+        """Nearest partition that fits as a merge partner, or None."""
         for nbr_pid in nearest_partitions_in_order(
                 index, partition.centroid, self.merge_candidates, exclude={pid},
                 meter=meter):
@@ -540,14 +474,7 @@ class BanditMaintainer(Maintainer):
 
     def _available_arms(self, pid: int, partition: Partition, index: IVFIndex,
                         meter=None) -> list[int]:
-        """Return the actions whose guards allow them on this partition.
-
-        No action is always allowed, a refresh needs live vectors, compaction needs tombstones,
-        a split needs at least `min_split_size` vectors, and a merge needs a partner that fits.
-        Finding a merge partner compares the partition with every centroid, which is charged as
-        work, since a bandit that considers every partition would otherwise make about K squared
-        distance computations per pass for free.
-        """
+        """Return the actions whose guards allow them on this partition."""
         arms = [int(Action.NO_OP)]
         if partition.size() > 0:
             arms.append(int(Action.CENTROID_UPDATE))
@@ -564,10 +491,7 @@ class BanditMaintainer(Maintainer):
         return sorted(arms)
 
     def _action_cost(self, action: Action, before) -> float:
-        """Return the cost of an action, its weight times the vectors it touches over the split threshold.
-
-        A split also pays the fragmentation overhead.
-        """
+        """Cost of an action, from the vectors it touches."""
         vectors = before.total_size if action == Action.COMPACT else before.size
         cost = _ACTION_COST_MULTIPLIER[action] * vectors / max(self.max_partition_size, 1)
         if action == Action.SPLIT:
@@ -575,29 +499,18 @@ class BanditMaintainer(Maintainer):
         return cost
 
     def _badness(self, index: IVFIndex) -> float:
-        """Return the sum of (1 + access) times size squared, for the optional potential reward.
-
-        It grows faster than linearly with size, so a split lowers it and undoing one raises it.
-        """
+        """Score for the optional potential reward."""
         return float(sum((1.0 + p.access_count) * p.size() ** 2
                          for p in index.partitions.values()))
 
     def _op_horizon(self, base_intervals: float, partition: Partition) -> float:
-        """Return how long, in updates, a cooldown lasts for this partition.
-
-        A partition queried more often than average gets a shorter cooldown, so the policy can
-        revisit it sooner.
-        """
+        """Return how long, in updates, a cooldown lasts for this partition."""
         rel_hot = partition.access_count / (self._mean_access + 1e-9)
         scale = self.check_interval
         return max(self.cooldown_min * scale, base_intervals * scale / (1.0 + rel_hot))
 
     def _in_cooldown(self, pid: int, partition: Partition, reverse_of: str) -> bool:
-        """Return True if acting now would undo a recent `reverse_of` action on this partition.
-
-        Always False when cooldowns are off, as in the reported runs. A partition whose size has
-        changed a lot since that action is no longer held back.
-        """
+        """True if acting now would undo a recent action."""
         if self.cooldown_base <= 0:
             return False
         rec = self._action_log.get(pid)
@@ -610,10 +523,7 @@ class BanditMaintainer(Maintainer):
         return changed <= self.cooldown_change_frac
 
     def _signed_recency(self, pid: int, partition: Partition) -> float:
-        """Return the optional recency feature, positive after a recent split, negative after a merge.
-
-        It fades from 1 to 0 over the recency window.
-        """
+        """Optional recency feature."""
         rec = self._action_log.get(pid)
         if rec is None:
             return 0.0
@@ -623,7 +533,7 @@ class BanditMaintainer(Maintainer):
         return r * (1.0 if op == "split" else -1.0 if op == "merge" else 0.0)
 
     def _reversal_penalty(self, pid: int, partition: Partition, action: Action) -> float:
-        """Return the optional penalty for undoing a recent split or merge, zero when it is off."""
+        """Optional penalty for undoing a recent action."""
         if self.reversal_penalty_weight <= 0.0:
             return 0.0
         reverse_of = ("split" if action == Action.MERGE
@@ -641,11 +551,7 @@ class BanditMaintainer(Maintainer):
     def _execute(
         self, action: Action, pid: int, index: IVFIndex, report: MaintenanceReport
     ) -> list[Partition]:
-        """Apply an action to a partition and return the partitions that result.
-
-        Sets `_last_refused` when the action changed nothing, judged by whether the report moved,
-        so a refusal inside any of the helpers is detected the same way.
-        """
+        """Apply an action to a partition and return the partitions that result."""
         self._last_refused = False
         if pid not in index.partitions:
             self._last_refused = action != Action.NO_OP
@@ -672,11 +578,7 @@ class BanditMaintainer(Maintainer):
     def _do_split(
         self, pid: int, partition: Partition, index: IVFIndex, report: MaintenanceReport
     ) -> list[Partition]:
-        """Split a partition with 2-means and reassign the vectors near the new boundary.
-
-        The reassignment covers the two children and the 25 nearest partitions of the parent.
-        Returns the children, or the partition itself if the split was refused.
-        """
+        """Split a partition with 2-means and reassign the vectors near the new boundary."""
         if partition.size() < max(2, self.min_split_size):
             return [partition]
         if self.max_partitions is not None and len(index.partitions) >= self.max_partitions:
@@ -728,11 +630,7 @@ class BanditMaintainer(Maintainer):
     def _do_merge(
         self, pid: int, partition: Partition, index: IVFIndex, report: MaintenanceReport
     ) -> list[Partition]:
-        """Join a partition with its merge partner into one centred on the mean of both.
-
-        Unlike LIRE, where the surviving partition keeps its centroid. Both partitions are
-        charged, as in every policy that merges. Returns the merged partition.
-        """
+        """Join a partition with its merge partner into one centred on the mean of both."""
         if self.min_partitions is not None and len(index.partitions) <= self.min_partitions:
             return [partition]
         if self._in_cooldown(pid, partition, "split"):
@@ -743,7 +641,7 @@ class BanditMaintainer(Maintainer):
         nbr = index.partitions[nbr_pid]
 
         report.vectors_processed += partition.size() + nbr.size()
-        # the combined state of both partitions before the merge, see combine_snapshots
+        # state before the merge
         self._merge_before = combine_snapshots(
             [snapshot(partition, self.cost_model), snapshot(nbr, self.cost_model)])
         merged = merge_partitions([partition, nbr])
@@ -770,7 +668,7 @@ class BanditMaintainer(Maintainer):
     def _do_compact(
         self, pid: int, partition: Partition, index: IVFIndex, report: MaintenanceReport
     ) -> list[Partition]:
-        """Compact a partition, charged its stored length. Does nothing if it has no tombstones."""
+        """Compact a partition, if it has tombstones."""
         if not partition.tombstones:
             return [partition]
         report.vectors_processed += partition.total_size()

@@ -1,30 +1,4 @@
-"""What one DeDrift Split pass does to the index, measured pass by pass on one main run.
-
-    python scripts/dedrift_split_trace.py --dataset gist1m --seed 42
-
-DeDrift Split ends 22.0 percent above no maintenance on GIST, on all five seeds. The policy
-follows DeDrift section 5.1, "We train k-means with k2 centroids on B1 union B2, and replace the k2
-involved clusters", so the question is what that step does here, at K near 178, where the largest
-cluster rule of 0.2 percent of K rounds to one cluster a pass. The proposed mechanism is that each
-pass pulls the smallest clusters, wherever they are, into one k-means with the largest, so their
-vectors end up under centroids that are not the nearest to them. This measures it.
-
-Each pass is read before and after the step, without changing anything.
-
-    mse_all        mean squared distance of every live vector to its own centroid
-    mse_b1, mse_b2 the same over the vectors of the largest cluster and of the smallest clusters
-    nearest_b1, nearest_b2
-                   the share of those vectors whose own centroid is the nearest of all K. A vector
-                   whose centroid is not its nearest is found only when a query probes past the
-                   nearest partitions
-    b2_slot_gap    the distance from each smallest cluster's old centroid to the nearest centroid
-                   after the pass, over the median spacing between nearest centroids before it
-
-The measurement wraps DeDriftMaintainer._split from outside and the run goes through
-final_sweep.main, so the run is the same as in the main results, and the script checks at the end
-that its query cost equals the main result row of the same seed. Results go to
-results/raw/diag_2809.
-"""
+"""Trace what each DeDrift Split pass does to the index."""
 from __future__ import annotations
 
 import os
@@ -50,7 +24,7 @@ TRACE: list[dict] = []
 
 
 def _nearest_fraction(vecs: np.ndarray, own: np.ndarray, cents: np.ndarray) -> float:
-    """Return the share of rows whose own centroid is at least as near as every centroid in `cents`."""
+    """Share of rows whose own centroid is the nearest."""
     if len(vecs) == 0:
         return float("nan")
     v = vecs.astype(np.float64)
@@ -61,7 +35,7 @@ def _nearest_fraction(vecs: np.ndarray, own: np.ndarray, cents: np.ndarray) -> f
 
 
 def _traced_split(orig):
-    """Return a replacement for DeDriftMaintainer._split that runs `orig` and records the pass."""
+    """Wrap DeDrift's split so it records each pass."""
     def split(self, index, report):
         """Copy the index state, run the real split, and append the measurements to TRACE."""
         pre = {}
@@ -82,7 +56,7 @@ def _traced_split(orig):
         post_c = np.stack([index.partitions[q].centroid for q in post_ids]).astype(np.float32)
 
         def mse(pids, when):
-            """Mean squared distance of the given clusters' vectors to their centroid, before or after."""
+            """Mean squared distance of the clusters' vectors to their centroid."""
             tot, n = 0.0, 0
             for q in pids:
                 c, ids, vecs = pre[q]
@@ -98,7 +72,7 @@ def _traced_split(orig):
             return tot / max(n, 1), n
 
         def nearest(pids, when):
-            """Share of the given clusters' vectors whose own centroid is nearest, before or after."""
+            """Share of vectors whose own centroid is the nearest."""
             rows = [pre[q] for q in pids if pre[q][1]]
             if not rows:
                 return float("nan")
@@ -111,7 +85,6 @@ def _traced_split(orig):
             return _nearest_fraction(vecs, own, post_c)
 
         all_pre = mse(list(pre), "pre")
-        # after the pass every live vector is in index.partitions, so it is read there
         tot, n = 0.0, 0
         for p in index.partitions.values():
             ids, vecs = p.get_live_vectors()
@@ -139,7 +112,7 @@ def _traced_split(orig):
 
 
 def main() -> None:
-    """Run one DeDrift Split run with the pass recorder, write the trace, and check the run matches."""
+    """Run DeDrift Split with the pass recorder and write the trace."""
     p = argparse.ArgumentParser()
     p.add_argument("--dataset", choices=["sift1m", "gist1m"], default="gist1m")
     p.add_argument("--seed", type=int, default=42)
