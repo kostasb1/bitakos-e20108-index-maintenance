@@ -6,14 +6,7 @@ The thesis compares ways of maintaining an IVF (inverted file) vector index whil
 
 ## Documentation
 
-| Document | Contents |
-|---|---|
-| [docs/architecture.md](docs/architecture.md) | How the code is organised, one run end to end, the data structures, routing, work accounting, determinism |
-| [docs/policies.md](docs/policies.md) | Every maintenance policy in detail, its parameters, their sources and the differences from the papers |
-| [docs/measurement.md](docs/measurement.md) | The scoring, the Faiss prices, query cost, work, the delete models, the statistics, the fingerprints |
-| [docs/reproducing.md](docs/reproducing.md) | Every command, runtimes, output files and every column of a result file |
-| [docs/glossary.md](docs/glossary.md) | The terms used in the code, with their sources |
-| [docs/reference.md](docs/reference.md) | Every file, class and function, with its signature and explanation, generated from the code |
+[DOCUMENTATION.md](DOCUMENTATION.md) goes through the code file by file and explains what each part does.
 
 ## Installation
 
