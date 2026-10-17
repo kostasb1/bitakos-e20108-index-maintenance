@@ -1,4 +1,4 @@
-"""The reward of the bandit policy, built on the total Quake cost C."""
+"""the reward of the bandit policy, built on the total Quake cost C"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from src.partition import Partition
 
 @dataclass
 class PartitionSnapshot:
-    """State of a partition before an action."""
+    """state of a partition before an action"""
 
     size: int
     access: float
@@ -20,13 +20,13 @@ class PartitionSnapshot:
 
 
 def partition_latency_cost(partition: Partition, cost_model=None) -> float:
-    """Return what a partition costs the workload, access count times lambda(size)."""
+    """return what a partition costs the workload, access count times lambda(size)"""
     lam = cost_model.scan_latency(partition.size()) if cost_model else float(partition.size())
     return partition.access_count * lam
 
 
 def index_cost(index, cost_model=None, nprobe: int = 10) -> float:
-    """Return the total Quake cost C, the sum of A times lambda(size) plus lambda_c(K)."""
+    """return the total Quake cost C, the sum of A times lambda(size) plus lambda_c(K)"""
     lam = cost_model.scan_latency if cost_model else float
     lam_c = cost_model.centroid_latency if cost_model else float
     queries = index.query_count(nprobe)
@@ -38,7 +38,7 @@ def index_cost(index, cost_model=None, nprobe: int = 10) -> float:
 
 
 def snapshot(partition: Partition, cost_model=None) -> PartitionSnapshot:
-    """Record the current state of a partition."""
+    """record the current state of a partition"""
     return PartitionSnapshot(
         size=partition.size(),
         access=partition.access_count,
@@ -50,7 +50,7 @@ def snapshot(partition: Partition, cost_model=None) -> PartitionSnapshot:
 
 
 def combine_snapshots(snaps: list[PartitionSnapshot]) -> PartitionSnapshot:
-    """Combine the snapshots of the partitions a merge consumes into one."""
+    """combine the snapshots of the partitions a merge consumes into one"""
     total_live = sum(s.size for s in snaps)
     if total_live > 0:
         drift = sum(s.drift * s.size for s in snaps) / total_live
@@ -83,7 +83,7 @@ def compute_reward(
     clip: float | None = None,
     drift_credit: bool = True,
 ) -> float:
-    """Return the reward of an action."""
+    """return the reward of an action"""
     if not after_partitions:
         return 0.0
 

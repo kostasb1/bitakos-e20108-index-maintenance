@@ -1,4 +1,4 @@
-"""The policy interface, and the restructuring operations every policy shares."""
+"""the policy interface, and the restructuring operations every policy shares"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def drift_limit(
     drift_fraction: float,
     drift_threshold: float | None = None,
 ) -> float:
-    """Return the drift threshold as a distance, `drift_fraction` times the data scale."""
+    """return the drift threshold as a distance, `drift_fraction` times the data scale"""
     if drift_threshold is not None:
         return float(drift_threshold)
     scale = index.data_scale if index.data_scale > 0.0 else 1.0
@@ -27,12 +27,12 @@ def drift_limit(
 
 
 class Maintainer(ABC):
-    """The base class of every maintenance policy, with the running totals of its work."""
+    """the base class of every maintenance policy, with the running totals of its work"""
 
     name: str = "base"
 
     def __init__(self, check_interval: int = MAINTENANCE_CHECK_INTERVAL) -> None:
-        """Create a policy that may act every `check_interval` updates."""
+        """create a policy that may act every `check_interval` updates"""
         self.check_interval = check_interval
         self._last_check_step: int = 0
         self._cumulative_cost_seconds: float = 0.0
@@ -59,21 +59,21 @@ class Maintainer(ABC):
         self._cumulative_compaction: int = 0
 
     def start(self, index: IVFIndex, step: int) -> None:
-        """Note that the stream takes over the index at update `step`."""
+        """note that the stream takes over the index at update `step`"""
         self._last_check_step = step
 
     @abstractmethod
     def should_maintain(self, index: IVFIndex, step: int) -> bool:
-        """Return True if the policy wants to act at this check."""
+        """return True if the policy wants to act at this check"""
         ...
 
     @abstractmethod
     def maintain(self, index: IVFIndex) -> MaintenanceReport:
-        """Run one maintenance pass and return what it did."""
+        """run one maintenance pass and return what it did"""
         ...
 
     def maybe_maintain(self, index: IVFIndex, step: int) -> MaintenanceReport | None:
-        """Offer the policy a chance to act, at most once every `check_interval` updates."""
+        """offer the policy a chance to act, at most once every `check_interval` updates"""
         if step - self._last_check_step < self.check_interval:
             return None
         self._last_check_step = step
@@ -108,7 +108,7 @@ class Maintainer(ABC):
 def balance_constrained_assignment(
     vectors: np.ndarray, centroids: np.ndarray, max_iter: int = 20,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Clustering with a penalty on large clusters."""
+    """clustering with a penalty on large clusters"""
     k = len(centroids)
     n = len(vectors)
     counts = np.zeros(k, dtype=np.float64)
@@ -140,7 +140,7 @@ def balance_constrained_assignment(
 
 
 def kmeans_distance_evaluations(km, n_points: int) -> int:
-    """Return the distance evaluations a fitted scikit-learn KMeans made."""
+    """return the distance evaluations a fitted scikit-learn KMeans made"""
     seeding = 1 if km.init == "k-means++" else 0
     return int(km.n_init) * (int(km.n_iter_) + seeding) * int(n_points) * int(km.n_clusters)
 
@@ -149,7 +149,7 @@ def split_partition_2means(
     partition: Partition, random_state: int = 42, balanced: bool = BALANCED_SPLIT,
     meter=None, n_init: int = 3, max_iter: int = 300, init: str = "k-means++",
 ) -> list[Partition]:
-    """Split a partition in two with 2-means, and return the new partitions."""
+    """split a partition in two with 2-means, and return the new partitions"""
     from sklearn.cluster import KMeans
 
     live_ids, live_vecs = partition.get_live_vectors()
@@ -179,7 +179,7 @@ def split_partition_2means(
 
 
 def merge_partitions(partitions: list[Partition], placeholder_id: int = -1) -> Partition:
-    """Join partitions into one, centred on the mean of all their live vectors."""
+    """join partitions into one, centred on the mean of all their live vectors"""
     if not partitions:
         raise ValueError("Cannot merge empty list of partitions")
     if len(partitions) == 1:
@@ -197,7 +197,7 @@ def merge_partitions(partitions: list[Partition], placeholder_id: int = -1) -> P
 
 
 def collect_empty_partitions(index: IVFIndex, keep_at_least: int = 1) -> list[int]:
-    """Remove partitions with no live vectors, and return the ids removed."""
+    """remove partitions with no live vectors, and return the ids removed"""
     empty = [pid for pid, p in index.partitions.items() if p.is_empty()]
     removable = len(index.partitions) - keep_at_least
     if removable <= 0:
@@ -213,7 +213,7 @@ def collect_empty_partitions(index: IVFIndex, keep_at_least: int = 1) -> list[in
 def plan_partition_deletion(
     index: IVFIndex, pid: int, meter=None, exclude: set[int] | None = None,
 ) -> dict[int, list[int]]:
-    """Return which partition each vector of `pid` would move to if `pid` were deleted."""
+    """return which partition each vector of `pid` would move to if `pid` were deleted"""
     if pid not in index.partitions or len(index.partitions) < 2:
         return {}
     live_ids, live_vecs = index.partitions[pid].get_live_vectors()
@@ -238,7 +238,7 @@ def plan_partition_deletion(
 
 
 def apply_partition_deletion(index: IVFIndex, pid: int, plan: dict[int, list[int]]) -> int:
-    """Delete `pid` and move its vectors. Returns how many moved."""
+    """delete `pid` and move its vectors, returns how many moved"""
     partition = index.partitions[pid]
     live_ids, live_vecs = partition.get_live_vectors()
     by_id = dict(zip(live_ids, live_vecs, strict=True))
@@ -260,7 +260,7 @@ def apply_partition_deletion(index: IVFIndex, pid: int, plan: dict[int, list[int
 
 
 def merge_into_survivor(index: IVFIndex, short_pid: int, long_pid: int) -> list[int]:
-    """Merge partition `short_pid` into `long_pid`, as SPFresh section 3.2 does."""
+    """merge partition `short_pid` into `long_pid`, as SPFresh section 3.2 does"""
     short = index.partitions[short_pid]
     moved_ids, moved_vecs = short.get_live_vectors()
     survivor = index.partitions[long_pid]
@@ -280,7 +280,7 @@ def reassign_lire_after_split(
     neighbor_pids: list[int],
     meter=None,
 ) -> tuple[int, int]:
-    """Fix vector placement after a split, SPFresh section 3.3."""
+    """fix vector placement after a split, SPFresh section 3.3"""
     local_pids = [pid for pid in dict.fromkeys([*new_pids, *neighbor_pids])
                   if pid in index.partitions]
     if len(local_pids) < 2:
@@ -328,7 +328,7 @@ def reassign_lire_after_merge(
     old_centroid: np.ndarray,
     meter=None,
 ) -> int:
-    """Repair vector placement after a LIRE merge. Returns the number of vectors moved."""
+    """repair vector placement after a LIRE merge, returns the number of vectors moved"""
     if merged_pid not in index.partitions or not moved_ids:
         return 0
     local_pids = [pid for pid in dict.fromkeys([merged_pid, *neighbor_pids])
@@ -367,7 +367,7 @@ def top_k_nearest_partitions(
     exclude: set[int] | None = None,
     meter=None,
 ) -> list[int]:
-    """Ids of the `k` nearest partitions, unordered."""
+    """ids of the `k` nearest partitions, unordered"""
     if exclude is None:
         exclude = set()
     candidate_pids = [pid for pid in index.partition_ids() if pid not in exclude]
@@ -393,7 +393,7 @@ def nearest_partitions_in_order(
     exclude: set[int] | None = None,
     meter=None,
 ) -> list[int]:
-    """Ids of the `k` nearest partitions, nearest first."""
+    """ids of the `k` nearest partitions, nearest first"""
     if exclude is None:
         exclude = set()
     candidate_pids = [pid for pid in index.partition_ids() if pid not in exclude]
@@ -420,7 +420,7 @@ def reassign_boundary(
     candidate_source_pids: list[int],
     meter=None,
 ) -> int:
-    """Move every vector of the given partitions to its nearest centroid among them."""
+    """move every vector of the given partitions to its nearest centroid among them"""
     local_pids = [pid for pid in dict.fromkeys([*target_pids, *candidate_source_pids])
                   if pid in index.partitions]
     if len(local_pids) < 2:
@@ -450,7 +450,7 @@ def reassign_boundary(
 
 
 def recompute_all_centroids(index: IVFIndex, drift_threshold: float = 0.0) -> int:
-    """Move every centroid whose drift exceeds `drift_threshold` to its partition mean."""
+    """move every centroid whose drift exceeds `drift_threshold` to its partition mean"""
     updated = 0
     for pid in list(index.partition_ids()):
         p = index.partitions[pid]

@@ -1,4 +1,4 @@
-"""Run the experiments into one result file."""
+"""run the experiments into one result file"""
 
 from __future__ import annotations
 
@@ -58,12 +58,12 @@ _PROFILED: dict = {}
 
 
 def profile_path(dim: int) -> Path:
-    """Return the path of the stored scan cost curve for vectors of `dim` dimensions."""
+    """return the path of the stored scan cost curve for vectors of `dim` dimensions"""
     return COST_MODEL_DIR / f"profiled_lambda_dim{dim}.yaml"
 
 
 def profiled_cost_model(dim: int, reprofile: bool = False):
-    """Load the scan cost curve for `dim` dimensions."""
+    """load the scan cost curve for `dim` dimensions"""
     rebuild = ("lambda is the Faiss price curve, rebuild it with "
                "python scripts/calibrate_query_cost.py, or with --lambda-only from the stored "
                "price list")
@@ -79,11 +79,11 @@ def profiled_cost_model(dim: int, reprofile: bool = False):
     return _PROFILED[dim]
 
 
-DEDRIFT_N_LARGEST: int | None = None  # None uses the fraction
+DEDRIFT_N_LARGEST: int | None = None  # none uses the fraction
 
 
 def build(name: str, seed: int, hi: int, lo: int, cost_model):
-    """Create the policy called `name`, configured as in the reported runs."""
+    """create the policy called `name`, configured as in the reported runs"""
     if name == "no_op":
         return NoOpMaintainer()
     if name == "global_rebuild":
@@ -121,7 +121,7 @@ COST_AWARE = ("cost_driven_quake", "cost_driven_quake_tau50", "bandit")
 
 
 def run_one_staple(base, name, seed, staple, qpool, eval_q, args, served_q=None) -> dict:
-    """Run one policy on one seed and return its result row."""
+    """run one policy on one seed and return its result row"""
     model = profiled_cost_model(base.shape[1]) if name in COST_AWARE else None
     maint = build(name, seed, staple.hi, staple.lo, model)
     out = run_stream(staple, base, maint, qpool, eval_q, seed,
@@ -133,7 +133,7 @@ def run_one_staple(base, name, seed, staple, qpool, eval_q, args, served_q=None)
     dim = base.shape[1]
 
     def qc(r: dict, prefix: str = "", priced: str = "cost_priced") -> float:
-        """Query cost of a reading."""
+        """query cost of a reading"""
         return query_cost(r[prefix + priced], r[prefix + "parts"], dim)
 
     # two delete models, the reported one removes deleted vectors at once
@@ -229,7 +229,7 @@ def run_one_staple(base, name, seed, staple, qpool, eval_q, args, served_q=None)
 
 
 def aggregate_and_plot(df: pd.DataFrame, figures_dir: Path, write_figures: bool = True) -> None:
-    """Print the mean and spread of cost and work per policy, and optionally plot them."""
+    """print the mean and spread of cost and work per policy, and optionally plot them"""
     global COST_COL, WORK_COL
     COST_COL = "query_cost" if "query_cost" in df.columns else "fixed_recall_cost"
     WORK_COL = "work_calibrated" if "work_calibrated" in df.columns else "work"
@@ -268,7 +268,7 @@ def aggregate_and_plot(df: pd.DataFrame, figures_dir: Path, write_figures: bool 
 
 
 def main() -> None:
-    """Parse the arguments, run every requested combination, and write the result file."""
+    """parse the arguments, run every requested combination, and write the result file"""
     p = argparse.ArgumentParser()
     p.add_argument("--dataset", default="sift1m", choices=["sift1m", "gist1m", "synthetic"])
     p.add_argument("--workload", default="staple", choices=["staple"],
@@ -343,7 +343,7 @@ def main() -> None:
     fps: dict[str, tuple[str, dict]] = {}
 
     def fp_for(name: str) -> tuple[str, dict]:
-        """Return the fingerprint and provenance of a policy's rows, computed once."""
+        """return the fingerprint and provenance of a policy's rows, computed once"""
         if name not in fps:
             fps[name] = fingerprint(params, name)
         return fps[name]
@@ -398,7 +398,7 @@ def main() -> None:
     staples: dict[int, tuple] = {}
 
     def staple_for(seed: int):
-        """Return the starting index and the query samples of a seed, building them once."""
+        """return the starting index and the query samples of a seed, building them once"""
         if seed not in staples:
             labels = workload_labels(base, N_WORKLOAD_CLUSTERS, seed)
             st = grow_staple(base, labels, cap=args.cap, target_avg=args.target_avg,

@@ -1,4 +1,4 @@
-"""The three DeDrift strategies, Baranchuk et al., ICCV 2023, section 5.1."""
+"""the three DeDrift strategies, baranchuk et al., ICCV 2023, section 5.1"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ DEDRIFT_N_LARGEST_FRACTION: float = 0.0020
 
 
 class DeDriftMaintainer(Maintainer):
-    """DeDrift Lazy, Split or Hybrid."""
+    """DeDrift Lazy, split or Hybrid"""
 
     name = "dedrift"
 
@@ -30,7 +30,7 @@ class DeDriftMaintainer(Maintainer):
         check_interval: int = MAINTENANCE_CHECK_INTERVAL,
         seed: int = 42,
     ) -> None:
-        """Create the policy for one variant, "lazy", "split" or "hybrid"."""
+        """create the policy for one variant, 'lazy', 'split' or 'hybrid'"""
         super().__init__(check_interval=check_interval)
         if variant not in VARIANTS:
             raise ValueError(f"variant must be one of {VARIANTS}, got {variant!r}")
@@ -43,12 +43,12 @@ class DeDriftMaintainer(Maintainer):
         self._last_update_total = 0
 
     def start(self, index: IVFIndex, step: int) -> None:
-        """Start counting updates at the start of the stream."""
+        """start counting updates at the start of the stream"""
         super().start(index, step)
         self._last_update_total = index._total_inserts + index._total_deletes
 
     def should_maintain(self, index: IVFIndex, step: int) -> bool:
-        """Act once enough of the vectors have changed."""
+        """act once enough of the vectors have changed"""
         if not index.partitions:
             return False
         total = index._total_inserts + index._total_deletes
@@ -56,14 +56,14 @@ class DeDriftMaintainer(Maintainer):
         return (total - self._last_update_total) >= self.update_fraction * live
 
     def maybe_maintain(self, index: IVFIndex, step: int):
-        """Run the base check, and restart the update count whenever a step ran."""
+        """run the base check, and restart the update count whenever a step ran"""
         report = super().maybe_maintain(index, step)
         if report is not None:
             self._last_update_total = index._total_inserts + index._total_deletes
         return report
 
     def maintain(self, index: IVFIndex) -> MaintenanceReport:
-        """Run the variant's update step and return what it did."""
+        """run the variant's update step and return what it did"""
         report = MaintenanceReport(triggered=True)
         if self.variant in ("lazy", "hybrid"):
             self._lazy(index, report)
@@ -72,13 +72,13 @@ class DeDriftMaintainer(Maintainer):
         return report
 
     def n_largest_for(self, n_partitions: int) -> int:
-        """Return the number of largest clusters to collect into B1, at least one."""
+        """return the number of largest clusters to collect into B1, at least one"""
         if self.n_largest is not None:
             return self.n_largest
         return max(1, round(self.n_largest_fraction * n_partitions))
 
     def _lazy(self, index: IVFIndex, report: MaintenanceReport) -> None:
-        """Move each centroid to the mean of its vectors."""
+        """move each centroid to the mean of its vectors"""
         for pid in list(index.partition_ids()):
             p = index.partitions[pid]
             if p.size() == 0:
@@ -88,7 +88,7 @@ class DeDriftMaintainer(Maintainer):
             report.num_centroids_recomputed += 1
 
     def _split(self, index: IVFIndex, report: MaintenanceReport) -> None:
-        """Recluster the largest and smallest clusters, keeping K."""
+        """recluster the largest and smallest clusters, keeping K"""
         from sklearn.cluster import KMeans
 
         # empty partitions count in the median

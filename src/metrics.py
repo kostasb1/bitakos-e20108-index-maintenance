@@ -1,4 +1,4 @@
-"""The scoring, how well maintenance worked, never how a policy decides."""
+"""the scoring, how well maintenance worked, never how a policy decides"""
 
 from __future__ import annotations
 
@@ -21,13 +21,13 @@ def recall_at_k(
     k: int,
     nprobe: int,
 ) -> float:
-    """Return the mean recall at `k` over `queries` at a fixed `nprobe`."""
+    """return the mean recall at `k` over `queries` at a fixed `nprobe`"""
     per_query = recall_at_k_per_query(index, queries, ground_truth, k, nprobe)
     return float(per_query.mean())
 
 
 def compute_live_ground_truth(index: IVFIndex, queries: np.ndarray, k: int) -> np.ndarray:
-    """Return the ids of the exact `k` nearest live vectors of every query."""
+    """return the ids of the exact `k` nearest live vectors of every query"""
     # exact ties broken by stacking order
     all_ids: list[int] = []
     blocks: list[np.ndarray] = []
@@ -57,7 +57,7 @@ def recall_at_k_live(
     k: int,
     nprobe: int,
 ) -> float:
-    """Mean recall at a fixed nprobe."""
+    """mean recall at a fixed nprobe"""
     live_gt = compute_live_ground_truth(index, queries, k)
     if live_gt.shape[1] == 0:
         return 0.0
@@ -72,7 +72,7 @@ def recall_at_k_per_query(
     k: int,
     nprobe: int,
 ) -> np.ndarray:
-    """Recall at `k` of each query."""
+    """recall at `k` of each query"""
     results = np.zeros(len(queries))
 
     for i, q in enumerate(queries):
@@ -94,7 +94,7 @@ def query_scan_cost(
     index: IVFIndex, queries: np.ndarray, nprobe: int, include_centroids: bool = False,
     stored: bool = False,
 ) -> float:
-    """Return the mean number of vectors a query scans at `nprobe`."""
+    """return the mean number of vectors a query scans at `nprobe`"""
     if not index.partitions:
         return 0.0
     sizes = {pid: (p.total_size() if stored else p.size())
@@ -109,7 +109,7 @@ def query_scan_cost(
 
 def priced_scan_cost(index: IVFIndex, queries: np.ndarray, nprobe: int,
                      stored: bool = False) -> float:
-    """Return the mean Faiss price of the lists a query probes at `nprobe`."""
+    """return the mean Faiss price of the lists a query probes at `nprobe`"""
     if not index.partitions:
         return 0.0
     pids = list(index.partitions)
@@ -125,7 +125,7 @@ def priced_scan_cost(index: IVFIndex, queries: np.ndarray, nprobe: int,
 
 def _read_between(read: Callable[[int], float], nprobe: float, n_parts: int,
                   nprobe_grid: tuple[int, ...] | None = None) -> float:
-    """Interpolate a reading between two nprobe values."""
+    """interpolate a reading between two nprobe values"""
     if float(nprobe).is_integer() or nprobe <= 1 or nprobe >= n_parts:
         return read(int(round(nprobe)))
     if nprobe_grid is None:
@@ -143,14 +143,14 @@ def _read_between(read: Callable[[int], float], nprobe: float, n_parts: int,
 
 def priced_cost_at(index: IVFIndex, queries: np.ndarray, nprobe: float, stored: bool = False,
                    nprobe_grid: tuple[int, ...] | None = None) -> float:
-    """Return the priced scan at the nprobe that met the recall target."""
+    """return the priced scan at the nprobe that met the recall target"""
     return _read_between(lambda n: priced_scan_cost(index, queries, n, stored), nprobe,
                          len(index.partitions), nprobe_grid)
 
 
 def stored_cost_at(index: IVFIndex, queries: np.ndarray, nprobe: float,
                    nprobe_grid: tuple[int, ...] | None = None) -> float:
-    """Scan count at the target recall, with tombstones scanned."""
+    """scan count at the target recall, with tombstones scanned"""
     return _read_between(lambda n: query_scan_cost(index, queries, n, stored=True), nprobe,
                          len(index.partitions), nprobe_grid)
 
@@ -162,7 +162,7 @@ def cost_at_target_recall(
     target_recall: float = 0.9,
     nprobe_grid: tuple[int, ...] | None = None,
 ) -> tuple[float, float, float, float]:
-    """Return the scan cost at the nprobe where mean recall reaches `target_recall`."""
+    """return the scan cost at the nprobe where mean recall reaches `target_recall`"""
     if nprobe_grid is None:
         return costs_at_target_recalls(index, queries, k, (target_recall,))[target_recall]
     live_gt = compute_live_ground_truth(index, queries, k)
@@ -197,7 +197,7 @@ def cost_at_target_recall(
 def costs_at_target_recalls(
     index: IVFIndex, queries: np.ndarray, k: int, targets: tuple[float, ...],
 ) -> dict[float, tuple[float, float, float, float]]:
-    """Return `cost_at_target_recall` for several targets, one result per target."""
+    """return `cost_at_target_recall` for several targets, one result per target"""
     live_gt = compute_live_ground_truth(index, queries, k)
     if live_gt.shape[1] == 0:
         return {t: (0.0, 0, 0.0, 0.0) for t in targets}
@@ -210,7 +210,7 @@ def costs_at_target_recalls(
 def cost_rebuilt_at_own_k(
     index: IVFIndex, queries: np.ndarray, k: int, target_recall: float = 0.9, seed: int = 0,
 ) -> dict:
-    """Query cost of a fresh k-means at the same K."""
+    """query cost of a fresh k-means at the same K"""
     ids: list[int] = []
     blocks: list[np.ndarray] = []
     for p in index.partitions.values():
@@ -233,12 +233,12 @@ def _cost_at_target_every_integer(
     index: IVFIndex, queries: np.ndarray, live_gt: np.ndarray, k: int, target_recall: float,
     n_parts: int, measured: dict[int, np.ndarray] | None = None,
 ) -> tuple[float, float, float, float]:
-    """The doubling and bisection search of `cost_at_target_recall`."""
+    """the doubling and bisection search of `cost_at_target_recall`"""
     if measured is None:
         measured = {}
 
     def rec(n: int) -> float:
-        """Return the mean recall at nprobe `n`, measuring it only once."""
+        """return the mean recall at nprobe `n`, measuring it only once"""
         if n not in measured:
             measured[n] = recall_at_k_per_query(index, queries, live_gt, k, n)
         return float(measured[n].mean())
@@ -273,7 +273,7 @@ def adaptive_query_cost(
     target_recall: float = 0.9,
     radius_factor: float = 1.0,
 ) -> tuple[float, float, float]:
-    """Return the cost at the target recall using a per query adaptive nprobe."""
+    """return the cost at the target recall using a per query adaptive nprobe"""
     live_gt = compute_live_ground_truth(index, queries, k)
     if live_gt.shape[1] == 0:
         return 0.0, 0.0, 0.0
@@ -293,12 +293,12 @@ def adaptive_query_cost(
 
 
 def amortized_cost(partition: Partition) -> float:
-    """Access count times live size. Not used in the reported runs."""
+    """access count times live size, not used in the reported runs"""
     return partition.access_count * partition.size()
 
 
 def partition_quality(partition: Partition, cost_model: CostModel | None = None) -> float:
-    """Quality score of a partition, lower is better. Not used in the reported runs."""
+    """quality score of a partition, lower is better, not used in the reported runs"""
     if cost_model is not None:
         return cost_model.predict_latency(
             size=partition.size(),
@@ -318,7 +318,7 @@ def partition_quality(partition: Partition, cost_model: CostModel | None = None)
 
 
 def index_quality(index: IVFIndex, cost_model: CostModel | None = None) -> QualityReport:
-    """Quality score over all partitions, and the worst one. Not used in the reported runs."""
+    """quality score over all partitions, and the worst one, not used in the reported runs"""
     stats_list = []
     qualities = []
     worst_id = -1
@@ -346,7 +346,7 @@ def index_quality(index: IVFIndex, cost_model: CostModel | None = None) -> Quali
 
 
 def size_imbalance(index: IVFIndex) -> float:
-    """Return the largest partition size over the mean, 1.0 when perfectly balanced."""
+    """return the largest partition size over the mean, 1.0 when perfectly balanced"""
     stats = index.stats()
     if stats.mean_partition_size == 0:
         return 1.0
@@ -354,7 +354,7 @@ def size_imbalance(index: IVFIndex) -> float:
 
 
 def reconstruction_error(index: IVFIndex, sample_size: int = 10_000, seed: int = 0) -> float:
-    """Return the mean squared distance from sampled vectors to their centroid."""
+    """return the mean squared distance from sampled vectors to their centroid"""
     errors: list[float] = []
     partitions = list(index.partitions.values())
     if not partitions:
@@ -387,7 +387,7 @@ def query_latency_percentiles(
     nprobe: int,
     k: int,
 ) -> dict[str, float]:
-    """Search time percentiles in ms. Not used in the reported runs."""
+    """search time percentiles in ms, not used in the reported runs"""
     times_ms: list[float] = []
 
     for q in queries:

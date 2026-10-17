@@ -1,4 +1,4 @@
-"""Constants shared by the code, each with its source."""
+"""constants shared by the code, each with its source"""
 
 from pathlib import Path
 

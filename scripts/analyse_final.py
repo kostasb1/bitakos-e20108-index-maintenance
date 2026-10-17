@@ -1,4 +1,4 @@
-"""Tables and figures from the main results."""
+"""tables and figures from the main results"""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ LABELS = {"no_op": "no maintenance", "global_rebuild": "global rebuild", "lire_l
 
 
 def load(sweep: Path) -> dict[str, pd.DataFrame]:
-    """Read every result file in `sweep`, one table per dataset."""
+    """read every result file in `sweep`, one table per dataset"""
     out = {}
     for ds in DIMS:
         tag = "sift" if ds == "sift1m" else "gist"
@@ -52,7 +52,7 @@ def load(sweep: Path) -> dict[str, pd.DataFrame]:
 
 
 def enrich(d: pd.DataFrame, dim: int) -> pd.DataFrame:
-    """Add the columns derived against no maintenance on the same seed."""
+    """add the columns derived against no maintenance on the same seed"""
     d = d.copy()
     base = d[d.maintainer == "no_op"].set_index("seed")
     updates = d.inserts + d.deletes
@@ -71,18 +71,18 @@ def enrich(d: pd.DataFrame, dim: int) -> pd.DataFrame:
 
 
 def paired_vs_no_op(d: pd.DataFrame, col: str = "query_cost") -> pd.DataFrame:
-    """Compare every policy with no maintenance on the same seed, for one cost column."""
+    """compare every policy with no maintenance on the same seed, for one cost column"""
     p = d.pivot(index="seed", columns="maintainer", values=col)
     return summarise(np.log(p.div(p["no_op"], axis=0)), col, f"{col}_vs_no_op")
 
 
 def _pct(x):
-    """Turn a log ratio into a percent change."""
+    """turn a log ratio into a percent change"""
     return 100 * (np.exp(x) - 1)
 
 
 def summarise(logs: pd.DataFrame, prefix: str, head: str) -> pd.DataFrame:
-    """Mean and paired t interval of per-seed log ratios, in percent."""
+    """mean and paired t interval of per-seed log ratios, in percent"""
     n = logs.notna().sum()
     mean = logs.mean()
     half = stats.t.ppf(0.975, n - 1) * logs.std(ddof=1) / np.sqrt(n)
@@ -95,14 +95,14 @@ def summarise(logs: pd.DataFrame, prefix: str, head: str) -> pd.DataFrame:
 
 
 def equal_k(d: pd.DataFrame) -> pd.DataFrame:
-    """Compare each policy's own index with a fresh exact k-means at the K it ended at."""
+    """compare each policy's own index with a fresh exact k-means at the K it ended at"""
     p = d.pivot(index="seed", columns="maintainer", values="query_cost")
     f = d.pivot(index="seed", columns="maintainer", values="query_cost_rebuilt_k")
     return summarise(np.log(p / f), "own_vs_fresh", "own_vs_fresh")
 
 
 def control(d: pd.DataFrame, name: str, ref: str) -> pd.DataFrame:
-    """Compare a control run with a reference policy on the same seed."""
+    """compare a control run with a reference policy on the same seed"""
     rows = []
     for col in ("query_cost", "query_cost_mean", "work_calibrated"):
         p = d.pivot(index="seed", columns="maintainer", values=col)[[name, ref]].dropna()
@@ -115,14 +115,14 @@ def control(d: pd.DataFrame, name: str, ref: str) -> pd.DataFrame:
 
 
 def tombstone(d: pd.DataFrame) -> pd.DataFrame:
-    """Ranking under the SPFresh delete model."""
+    """ranking under the SPFresh delete model"""
     cols = ["query_cost_stored", "stored_vs_no_op", "work_calibrated_tombstone",
             "total_compute_tombstone", "total_tomb_vs_no_op", "stored", "live"]
     return d.groupby("maintainer")[cols].mean().sort_values("query_cost_stored")
 
 
 def ranking(d: pd.DataFrame, cols: list[str] | None = None) -> pd.DataFrame:
-    """Mean over seeds of every column, with the paired comparisons."""
+    """mean over seeds of every column, with the paired comparisons"""
     cols = [c for c in (cols or RANKING_COLS) if c in d.columns]
     g = d.groupby("maintainer")
     t = g[cols].mean()
@@ -134,14 +134,14 @@ def ranking(d: pd.DataFrame, cols: list[str] | None = None) -> pd.DataFrame:
 
 
 def wins(d: pd.DataFrame, col: str = "query_cost") -> pd.DataFrame:
-    """Return, for every pair of policies, on how many seeds the row policy is cheaper."""
+    """return, for every pair of policies, on how many seeds the row policy is cheaper"""
     p = d.pivot(index="seed", columns="maintainer", values=col)
     names = list(p.columns)
     return pd.DataFrame({a: {b: int((p[a] < p[b]).sum()) for b in names} for a in names}).T
 
 
 def centroid_sensitivity(d: pd.DataFrame, ds: str, calibrated: float) -> pd.DataFrame:
-    """Rank the policies with the centroid price and with a price of 1."""
+    """rank the policies with the centroid price and with a price of 1"""
     rows = []
     for label, c in (("calibrated", calibrated), ("1", 1.0)):
         q = d.priced_scan + c * d.parts
@@ -153,7 +153,7 @@ def centroid_sensitivity(d: pd.DataFrame, ds: str, calibrated: float) -> pd.Data
 
 
 def frontier(tables: dict[str, pd.DataFrame], data: dict[str, pd.DataFrame], out: Path) -> None:
-    """Plot query cost against maintenance work."""
+    """plot query cost against maintenance work"""
     fig, axes = plt.subplots(1, len(tables), figsize=(6.2 * len(tables), 4.8), squeeze=False)
     for ax, (ds, t) in zip(axes[0], tables.items(), strict=True):
         d = data[ds]
@@ -177,7 +177,7 @@ def frontier(tables: dict[str, pd.DataFrame], data: dict[str, pd.DataFrame], out
 
 
 def main() -> None:
-    """Read the results, write every table and the figure, and print the summaries."""
+    """read the results, write every table and the figure, and print the summaries"""
     ap = argparse.ArgumentParser()
     ap.add_argument("--sweep", type=Path, default=Path("results/raw/final_2709"))
     ap.add_argument("--out", type=Path, default=Path("results/final_2709"))

@@ -1,4 +1,4 @@
-"""Measure the prices of the cost unit on Faiss."""
+"""measure the prices of the cost unit on Faiss"""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ CENTROID_COUNTS = (128, 256, 512, 1024, 2048)
 
 
 def calibrate(base: np.ndarray, queries: np.ndarray, seed: int = 0) -> dict:
-    """Measure the list prices and the centroid price."""
+    """measure the list prices and the centroid price"""
     import time
 
     import faiss
@@ -41,7 +41,7 @@ def calibrate(base: np.ndarray, queries: np.ndarray, seed: int = 0) -> dict:
     d = pool.shape[1]
 
     def best_ns(call) -> float:
-        """Fastest of five timed loops, ns per query."""
+        """fastest of five timed loops, ns per query"""
         best = float("inf")
         for _ in range(5):
             t0 = time.perf_counter()
@@ -92,7 +92,7 @@ def calibrate(base: np.ndarray, queries: np.ndarray, seed: int = 0) -> dict:
 
 
 def calibrate_work(base: np.ndarray, ns_per_scan_distance: float) -> dict:
-    """Measure the price of each kind of maintenance operation, in scan distances."""
+    """measure the price of each kind of maintenance operation, in scan distances"""
     import time
 
     import faiss
@@ -102,7 +102,7 @@ def calibrate_work(base: np.ndarray, ns_per_scan_distance: float) -> dict:
     d = base.shape[1]
 
     def kmeans_ns(n: int, k: int, niter: int, reps: int) -> float:
-        """Fastest time per distance of a Faiss k-means."""
+        """fastest time per distance of a Faiss k-means"""
         best = float("inf")
         for r in range(reps):
             x = np.ascontiguousarray(base[rng.choice(len(base), n, replace=False)].astype("float32"))
@@ -136,7 +136,7 @@ REPEATS = 5
 
 
 def main() -> None:
-    """Calibrate both datasets several times and store the medians."""
+    """calibrate both datasets several times and store the medians"""
     if "--lambda-only" in sys.argv:
         stored = yaml.safe_load(CALIBRATION_PATH.read_text())
         for dim, entry in stored.items():
@@ -178,7 +178,7 @@ def main() -> None:
 
 
 def write_lambda(dim: int, med: dict) -> None:
-    """Write the scan cost curve for `dim` dimensions."""
+    """write the scan cost curve for `dim` dimensions"""
     path = COST_MODEL_DIR / f"profiled_lambda_dim{dim}.yaml"
     model = lambda_from_prices(med)
     save_profiled_cost_model(model, path)

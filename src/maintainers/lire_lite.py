@@ -1,4 +1,4 @@
-"""LIRE, the update protocol of SPFresh (SOSP 2023), in memory."""
+"""LIRE, the update protocol of SPFresh (SOSP 2023), in memory"""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from src.types import MaintenanceReport
 
 
 class LireLiteMaintainer(Maintainer):
-    """LIRE, keep partitions between the merge and split limits."""
+    """LIRE, keep partitions between the merge and split limits"""
 
     name = "lire_lite"
 
@@ -39,7 +39,7 @@ class LireLiteMaintainer(Maintainer):
         enable_compact: bool = True,
         seed: int = 42,
     ) -> None:
-        """Create the policy with its split and merge limits."""
+        """create the policy with its split and merge limits"""
         super().__init__(check_interval=check_interval)
         self.max_partition_size = max_partition_size
         self.min_partition_size = min_partition_size
@@ -50,7 +50,7 @@ class LireLiteMaintainer(Maintainer):
         self.seed = seed
 
     def should_maintain(self, index: IVFIndex, step: int) -> bool:
-        """Return True if any partition is too long, small enough to merge, or empty."""
+        """return True if any partition is too long, small enough to merge, or empty"""
         for p in index.partitions.values():
             if p.total_size() > self.max_partition_size:
                 return True
@@ -63,7 +63,7 @@ class LireLiteMaintainer(Maintainer):
         return False
 
     def _collect(self, index: IVFIndex, pid: int, report: MaintenanceReport) -> bool:
-        """Compact a partition if it has tombstones, and return whether it did."""
+        """compact a partition if it has tombstones, and return whether it did"""
         partition = index.partitions[pid]
         if not (self.enable_compact and partition.tombstones):
             return False
@@ -73,7 +73,7 @@ class LireLiteMaintainer(Maintainer):
         return True
 
     def maintain(self, index: IVFIndex) -> MaintenanceReport:
-        """Run one LIRE pass, collect, split, then merge, and return what it did."""
+        """run one LIRE pass, collect, split, then merge, and return what it did"""
         report = MaintenanceReport(triggered=True)
         touched: set[int] = set()
 
@@ -81,7 +81,7 @@ class LireLiteMaintainer(Maintainer):
         report.num_collected += len(collect_empty_partitions(index))
 
         def _length(p):
-            """Stored length, tombstones included."""
+            """stored length, tombstones included"""
             return p.total_size()
 
         oversized = [

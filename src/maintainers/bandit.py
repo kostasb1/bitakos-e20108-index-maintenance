@@ -1,4 +1,4 @@
-"""The bandit policy, choosing one of five actions per partition."""
+"""the bandit policy, choosing one of five actions per partition"""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ from src.types import MaintenanceReport
 
 
 class Action(IntEnum):
-    """The five actions the bandit can take on a partition."""
+    """the five actions the bandit can take on a partition"""
 
     SPLIT = 0
     CENTROID_UPDATE = 1
@@ -65,7 +65,7 @@ _ACTION_COST_MULTIPLIER: dict[int, float] = {
 
 
 class BanditMaintainer(Maintainer):
-    """A contextual bandit that learns which action to take on each partition."""
+    """a contextual bandit that learns which action to take on each partition"""
 
     name = "bandit"
 
@@ -108,7 +108,7 @@ class BanditMaintainer(Maintainer):
         discount_mode: str = "arm",
         warm_start: bool = False,
     ) -> None:
-        """Create the policy."""
+        """create the policy"""
         super().__init__(check_interval=check_interval)
         # nprobe for the access fraction fallback
         self.nprobe = nprobe
@@ -187,7 +187,7 @@ class BanditMaintainer(Maintainer):
         self._last_refused = False
 
     def should_maintain(self, index: IVFIndex, step: int) -> bool:
-        """Act when a partition is too big, too small or empty, or drift is too high."""
+        """act when a partition is too big, too small or empty, or drift is too high"""
         self._cumulative_work += sum(p.size() for p in index.partitions.values()
                                      if p._cached_true_mean is None or p._dirty)
         stats = index.stats()
@@ -198,7 +198,7 @@ class BanditMaintainer(Maintainer):
         return any(p.size() < self.min_partition_size for p in index.partitions.values())
 
     def maintain(self, index: IVFIndex) -> MaintenanceReport:
-        """Run one pass, one action per candidate partition."""
+        """run one pass, one action per candidate partition"""
         report = MaintenanceReport(triggered=True)
         # remove empty partitions first
         report.num_collected += len(collect_empty_partitions(index))
@@ -332,7 +332,7 @@ class BanditMaintainer(Maintainer):
         return report
 
     def _select_candidates(self, index: IVFIndex) -> list[int]:
-        """Return the partitions to decide on in this pass."""
+        """return the partitions to decide on in this pass"""
         pids = index.partition_ids()
         if not pids:
             return []
@@ -362,7 +362,7 @@ class BanditMaintainer(Maintainer):
         return candidates
 
     def _eval_cost_quality(self, index: IVFIndex) -> tuple[float, float]:
-        """Mean scanned vectors and neighbour distance on the evaluation queries."""
+        """mean scanned vectors and neighbour distance on the evaluation queries"""
         results = index.search_batch(
             self.eval_queries, self.eval_k, self.eval_nprobe, record_access=False)
         dists = [d for res in results for (_, d) in res]
@@ -371,7 +371,7 @@ class BanditMaintainer(Maintainer):
         return cost, quality
 
     def _warm_start(self, index: IVFIndex, stats, report) -> None:
-        """Give the learner estimated rewards before it acts."""
+        """give the learner estimated rewards before it acts"""
         n = max(1, len(index.partitions))
         live = sum(p.size() for p in index.partitions.values())
         cur = replace(stats, num_partitions=n, live_vectors=live, mean_partition_size=live / n)
@@ -406,7 +406,7 @@ class BanditMaintainer(Maintainer):
     def _whatif(self, action: Action, pid: int, p: Partition, index: IVFIndex, access: float,
                 scale: float, avg_access: float, avg_size: int, drift_scale: float,
                 meter=None) -> float:
-        """Estimate the reward an action would earn, without taking it."""
+        """estimate the reward an action would earn, without taking it"""
         if action == Action.NO_OP:
             return 0.0
         lam = self.cost_model.scan_latency if self.cost_model else float
@@ -448,7 +448,7 @@ class BanditMaintainer(Maintainer):
         return max(-self.reward_clip, min(self.reward_clip, r))
 
     def _cost_scale(self, index: IVFIndex, c_before: float) -> float:
-        """Mean scan cost per partition."""
+        """mean scan cost per partition"""
         lam = self.cost_model.scan_latency if self.cost_model else float
         lam_c = self.cost_model.centroid_latency if self.cost_model else float
         k = max(1, len(index.partitions))
@@ -460,7 +460,7 @@ class BanditMaintainer(Maintainer):
 
     def _merge_target(self, pid: int, partition: Partition, index: IVFIndex,
                       meter=None) -> int | None:
-        """Nearest partition that fits as a merge partner, or None."""
+        """nearest partition that fits as a merge partner, or None"""
         for nbr_pid in nearest_partitions_in_order(
                 index, partition.centroid, self.merge_candidates, exclude={pid},
                 meter=meter):
@@ -474,7 +474,7 @@ class BanditMaintainer(Maintainer):
 
     def _available_arms(self, pid: int, partition: Partition, index: IVFIndex,
                         meter=None) -> list[int]:
-        """Return the actions whose guards allow them on this partition."""
+        """return the actions whose guards allow them on this partition"""
         arms = [int(Action.NO_OP)]
         if partition.size() > 0:
             arms.append(int(Action.CENTROID_UPDATE))
@@ -491,7 +491,7 @@ class BanditMaintainer(Maintainer):
         return sorted(arms)
 
     def _action_cost(self, action: Action, before) -> float:
-        """Cost of an action, from the vectors it touches."""
+        """cost of an action, from the vectors it touches"""
         vectors = before.total_size if action == Action.COMPACT else before.size
         cost = _ACTION_COST_MULTIPLIER[action] * vectors / max(self.max_partition_size, 1)
         if action == Action.SPLIT:
@@ -499,18 +499,18 @@ class BanditMaintainer(Maintainer):
         return cost
 
     def _badness(self, index: IVFIndex) -> float:
-        """Score for the optional potential reward."""
+        """score for the optional potential reward"""
         return float(sum((1.0 + p.access_count) * p.size() ** 2
                          for p in index.partitions.values()))
 
     def _op_horizon(self, base_intervals: float, partition: Partition) -> float:
-        """Return how long, in updates, a cooldown lasts for this partition."""
+        """return how long, in updates, a cooldown lasts for this partition"""
         rel_hot = partition.access_count / (self._mean_access + 1e-9)
         scale = self.check_interval
         return max(self.cooldown_min * scale, base_intervals * scale / (1.0 + rel_hot))
 
     def _in_cooldown(self, pid: int, partition: Partition, reverse_of: str) -> bool:
-        """True if acting now would undo a recent action."""
+        """true if acting now would undo a recent action"""
         if self.cooldown_base <= 0:
             return False
         rec = self._action_log.get(pid)
@@ -523,7 +523,7 @@ class BanditMaintainer(Maintainer):
         return changed <= self.cooldown_change_frac
 
     def _signed_recency(self, pid: int, partition: Partition) -> float:
-        """Optional recency feature."""
+        """optional recency feature"""
         rec = self._action_log.get(pid)
         if rec is None:
             return 0.0
@@ -533,7 +533,7 @@ class BanditMaintainer(Maintainer):
         return r * (1.0 if op == "split" else -1.0 if op == "merge" else 0.0)
 
     def _reversal_penalty(self, pid: int, partition: Partition, action: Action) -> float:
-        """Optional penalty for undoing a recent action."""
+        """optional penalty for undoing a recent action"""
         if self.reversal_penalty_weight <= 0.0:
             return 0.0
         reverse_of = ("split" if action == Action.MERGE
@@ -551,7 +551,7 @@ class BanditMaintainer(Maintainer):
     def _execute(
         self, action: Action, pid: int, index: IVFIndex, report: MaintenanceReport
     ) -> list[Partition]:
-        """Apply an action to a partition and return the partitions that result."""
+        """apply an action to a partition and return the partitions that result"""
         self._last_refused = False
         if pid not in index.partitions:
             self._last_refused = action != Action.NO_OP
@@ -578,7 +578,7 @@ class BanditMaintainer(Maintainer):
     def _do_split(
         self, pid: int, partition: Partition, index: IVFIndex, report: MaintenanceReport
     ) -> list[Partition]:
-        """Split a partition with 2-means and reassign the vectors near the new boundary."""
+        """split a partition with 2-means and reassign the vectors near the new boundary"""
         if partition.size() < max(2, self.min_split_size):
             return [partition]
         if self.max_partitions is not None and len(index.partitions) >= self.max_partitions:
@@ -617,7 +617,7 @@ class BanditMaintainer(Maintainer):
     def _do_centroid_update(
         self, pid: int, index: IVFIndex, report: MaintenanceReport
     ) -> list[Partition]:
-        """Move a partition's centroid to the mean of its live vectors."""
+        """move a partition's centroid to the mean of its live vectors"""
         partition = index.partitions[pid]
         if partition.size() == 0:
             return [partition]
@@ -630,7 +630,7 @@ class BanditMaintainer(Maintainer):
     def _do_merge(
         self, pid: int, partition: Partition, index: IVFIndex, report: MaintenanceReport
     ) -> list[Partition]:
-        """Join a partition with its merge partner into one centred on the mean of both."""
+        """join a partition with its merge partner into one centred on the mean of both"""
         if self.min_partitions is not None and len(index.partitions) <= self.min_partitions:
             return [partition]
         if self._in_cooldown(pid, partition, "split"):
@@ -668,7 +668,7 @@ class BanditMaintainer(Maintainer):
     def _do_compact(
         self, pid: int, partition: Partition, index: IVFIndex, report: MaintenanceReport
     ) -> list[Partition]:
-        """Compact a partition, if it has tombstones."""
+        """compact a partition, if it has tombstones"""
         if not partition.tombstones:
             return [partition]
         report.vectors_processed += partition.total_size()

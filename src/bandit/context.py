@@ -1,4 +1,4 @@
-"""Context features of a partition for the bandit."""
+"""context features of a partition for the bandit"""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def extract_context(
     drift_scale: float | None = None,
     queries: float | None = None,
 ) -> np.ndarray:
-    """The six context features of a partition."""
+    """the six context features of a partition"""
     size = partition.size()
     drift = partition.centroid_drift()
     # drift divided by the drift limit

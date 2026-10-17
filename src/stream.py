@@ -1,4 +1,4 @@
-"""The retention window stream that every reported number is measured on."""
+"""the retention window stream that every reported number is measured on"""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ ROUTE_CALIBRATION_INTERVAL: int = MAINTENANCE_CHECK_INTERVAL
 
 def recall_matched_nprobe(index, queries: np.ndarray, start: int,
                           target: float = ROUTE_TARGET_RECALL, k: int = DEFAULT_K) -> int:
-    """Smallest nprobe that meets the target recall."""
+    """smallest nprobe that meets the target recall"""
     gt = compute_live_ground_truth(index, queries, k)
     n_parts = len(index.partitions)
     if gt.shape[1] == 0 or n_parts == 0:
@@ -42,7 +42,7 @@ def recall_matched_nprobe(index, queries: np.ndarray, start: int,
     seen: dict[int, float] = {}
 
     def rec(n: int) -> float:
-        """Return the mean recall at nprobe `n`, measuring it only once."""
+        """return the mean recall at nprobe `n`, measuring it only once"""
         if n not in seen:
             seen[n] = float(recall_at_k_per_query(index, queries, gt, k, n).mean())
         return seen[n]
@@ -61,7 +61,7 @@ def recall_matched_nprobe(index, queries: np.ndarray, start: int,
 
 def query_pool(queries: np.ndarray, seed: int, hot_fraction: float, hot_prob: float,
                eval_queries: int, pool_size: int = 4000) -> tuple[np.ndarray, np.ndarray]:
-    """Return a routed query pool and a scoring sample drawn from that same pool."""
+    """return a routed query pool and a scoring sample drawn from that same pool"""
     qrng = np.random.default_rng(seed + 7)
     n_hot = max(1, int(len(queries) * hot_fraction))
     fh = qrng.random(pool_size) < hot_prob
@@ -73,7 +73,7 @@ def query_pool(queries: np.ndarray, seed: int, hot_fraction: float, hot_prob: fl
 
 
 def query_region(queries: np.ndarray, seed: int, fraction: float) -> tuple[int, np.ndarray]:
-    """The query ids near one query, where most queries come from."""
+    """the query ids near one query, where most queries come from"""
     n = max(1, int(len(queries) * fraction))
     centre = int(np.random.default_rng(seed + 19).integers(len(queries)))
     d = np.linalg.norm(queries.astype(np.float64) - queries[centre].astype(np.float64), axis=1)
@@ -82,7 +82,7 @@ def query_region(queries: np.ndarray, seed: int, fraction: float) -> tuple[int, 
 
 def split_query_pools(queries: np.ndarray, seed: int, hot_fraction: float, hot_prob: float,
                       eval_queries: int, pool_size: int = 4000):
-    """Split the queries into routed and held-out."""
+    """split the queries into routed and held-out"""
     rng = np.random.default_rng(seed + 13)
     _, region = query_region(queries, seed, hot_fraction)
     inside = rng.permutation(region)
@@ -93,7 +93,7 @@ def split_query_pools(queries: np.ndarray, seed: int, hot_fraction: float, hot_p
         halves.append((region_h, np.concatenate([region_h, outside[h::2]])))
 
     def draw(half, n, r):
-        """Draw `n` query ids, most from the region."""
+        """draw `n` query ids, most from the region"""
         region_h, all_h = half
         from_region = r.random(n) < hot_prob
         return np.where(from_region, region_h[r.integers(0, len(region_h), n)],
@@ -110,7 +110,7 @@ def split_query_pools(queries: np.ndarray, seed: int, hot_fraction: float, hot_p
 
 
 def measure(index, eval_q: np.ndarray, t: int, extra_targets: bool = True) -> dict:
-    """Read the scoring at time step `t` and return it as a dictionary."""
+    """read the scoring at time step `t` and return it as a dictionary"""
     targets = (0.9, *EXTRA_TARGETS) if extra_targets else (0.9,)
     readings = costs_at_target_recalls(index, eval_q, k=DEFAULT_K, targets=targets)
     extra = [(t, tag) for t, tag in EXTRA_TARGETS.items() if t in readings]
@@ -148,7 +148,7 @@ def run_stream(
     log: Callable[[dict], None] | None = None,
     served_q: np.ndarray | None = None,
 ) -> dict:
-    """Run one policy over the retention window, starting from a copy of `staple0`."""
+    """run one policy over the retention window, starting from a copy of `staple0`"""
     st = copy.deepcopy(staple0)
     index, members, cursor = st.index, st.members, st.cursor
 
@@ -164,7 +164,7 @@ def run_stream(
     due = sliding_window_cohorts(st, max_t)
 
     def reading(t: int) -> dict:
-        """Read the scoring at `t`, and on the served sample too when one is given."""
+        """read the scoring at `t`, and on the served sample too when one is given"""
         r = measure(index, eval_q, t)
         if served_q is not None:
             r.update({f"served_{k}": v for k, v in
@@ -182,7 +182,7 @@ def run_stream(
     since_calibration = 0
 
     def calibrate() -> None:
-        """Count one update, and recalibrate the routing nprobe every interval."""
+        """count one update, and recalibrate the routing nprobe every interval"""
         nonlocal route_nprobe, since_calibration
         since_calibration += 1
         if since_calibration >= ROUTE_CALIBRATION_INTERVAL:

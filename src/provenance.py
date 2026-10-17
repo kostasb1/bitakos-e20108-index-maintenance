@@ -1,4 +1,4 @@
-"""Fingerprints for result rows, so runs can be resumed safely."""
+"""fingerprints for result rows, so runs can be resumed safely"""
 from __future__ import annotations
 
 import hashlib
@@ -40,7 +40,7 @@ _LAMBDA_READERS = ("cost_driven_quake", "cost_driven_quake_tau50", "bandit")
 
 
 def _family(maintainer: str) -> str | None:
-    """Module group of a policy name."""
+    """module group of a policy name"""
     if maintainer.startswith("dedrift_"):
         return "dedrift"
     if maintainer in ("bandit", "bandit_linear"):
@@ -52,7 +52,7 @@ def _family(maintainer: str) -> str | None:
 
 
 def _code_bytes(p: Path) -> bytes:
-    """Return the bytes of a file as they enter the hash."""
+    """return the bytes of a file as they enter the hash"""
     if p.suffix != ".py":
         return p.read_bytes().replace(b"\r\n", b"\n")
     import ast
@@ -70,7 +70,7 @@ def _code_bytes(p: Path) -> bytes:
 
 
 def _hash_files(paths: list[Path]) -> str:
-    """One hash over the given files."""
+    """one hash over the given files"""
     h = hashlib.blake2b(digest_size=16)
     for p in sorted(paths):
         h.update(str(p.relative_to(PROJECT_ROOT)).replace("\\", "/").encode())
@@ -79,7 +79,7 @@ def _hash_files(paths: list[Path]) -> str:
 
 
 def code_hash(maintainer: str | None = None) -> str:
-    """Return the hash of the code that can affect a policy's rows."""
+    """return the hash of the code that can affect a policy's rows"""
     files: list[Path] = []
     for pattern in _CODE_GLOBS:
         files.extend(PROJECT_ROOT.glob(pattern))
@@ -96,13 +96,13 @@ def code_hash(maintainer: str | None = None) -> str:
 
 
 def scoreboard_hash() -> str:
-    """Hash of the price list."""
+    """hash of the price list"""
     path = COST_MODEL_DIR / "query_cost_calibration.yaml"
     return _hash_files([path]) if path.exists() else "absent"
 
 
 def cost_model_hash() -> str:
-    """Return the hash of the stored cost model files, or "absent" if there are none."""
+    """return the hash of the stored cost model files, or "absent" if there are none"""
     files: list[Path] = []
     for pattern in _MODEL_GLOBS:
         files.extend(COST_MODEL_DIR.glob(pattern))
@@ -110,7 +110,7 @@ def cost_model_hash() -> str:
 
 
 def _git(*args: str) -> str:
-    """Run a git command, or return "unknown"."""
+    """run a git command, or return 'unknown'"""
     try:
         out = subprocess.run(("git", *args), cwd=PROJECT_ROOT, capture_output=True,
                              text=True, timeout=10)
@@ -120,7 +120,7 @@ def _git(*args: str) -> str:
 
 
 def machine_id() -> str:
-    """Machine and library versions."""
+    """machine and library versions"""
     import numpy
     import sklearn
     try:
@@ -136,7 +136,7 @@ def machine_id() -> str:
 
 
 def provenance(params: dict, maintainer: str | None = None) -> dict:
-    """Return everything that decides whether two rows of a policy are comparable."""
+    """return everything that decides whether two rows of a policy are comparable"""
     missing = [k for k in PARAM_KEYS if k not in params]
     if missing:
         raise KeyError(f"provenance needs every run parameter, missing {missing}")
@@ -156,7 +156,7 @@ def provenance(params: dict, maintainer: str | None = None) -> dict:
 
 
 def fingerprint(params: dict, maintainer: str | None = None) -> tuple[str, dict]:
-    """Fingerprint of a policy's rows."""
+    """fingerprint of a policy's rows"""
     p = provenance(params, maintainer)
     payload = {k: p[k] for k in ("maintainer", "code_hash", "cost_model_hash",
                                  "scoreboard_hash", "machine", "threads", "params")}
@@ -166,12 +166,12 @@ def fingerprint(params: dict, maintainer: str | None = None) -> tuple[str, dict]
 
 
 def sidecar_path(output: Path) -> Path:
-    """Return the path of the provenance file that goes with a result file."""
+    """return the path of the provenance file that goes with a result file"""
     return output.with_suffix(output.suffix + ".provenance.json")
 
 
 def write_sidecar(output: Path, digest: str, prov: dict) -> None:
-    """Add the provenance of a fingerprint to the provenance file of a result file."""
+    """add the provenance of a fingerprint to the provenance file of a result file"""
     path = sidecar_path(output)
     store: dict = {}
     if path.exists():
@@ -185,7 +185,7 @@ def write_sidecar(output: Path, digest: str, prov: dict) -> None:
 
 
 def read_sidecar(output: Path) -> dict:
-    """Read the provenance file of a result file."""
+    """read the provenance file of a result file"""
     path = sidecar_path(output)
     if not path.exists():
         return {}

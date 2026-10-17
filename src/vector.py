@@ -1,4 +1,4 @@
-"""Distance arithmetic, and the partition scan that every query runs."""
+"""distance arithmetic, and the partition scan that every query runs"""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ import numpy as np
 
 
 def l2_distance(a: np.ndarray, b: np.ndarray) -> float:
-    """Return the Euclidean distance between two vectors."""
+    """return the Euclidean distance between two vectors"""
     return float(np.linalg.norm(a - b))
 
 
 def l2_distance_squared(a: np.ndarray, b: np.ndarray) -> float:
-    """Return the squared Euclidean distance between two vectors."""
+    """return the squared Euclidean distance between two vectors"""
     diff = a - b
     return float(diff @ diff)
 
@@ -23,7 +23,7 @@ _SCAN_MIN_ROWS = 1024
 
 
 def _scan_buffers(rows: int, dim: int, dtype: np.dtype):
-    """Return three scratch arrays sized for a partition of `rows` vectors."""
+    """return three scratch arrays sized for a partition of `rows` vectors"""
     key = (dim, dtype)
     held = _SCAN_BUFFERS.get(key)
     if held is None or held[0].shape[0] < rows:
@@ -36,7 +36,7 @@ def _scan_buffers(rows: int, dim: int, dtype: np.dtype):
 
 
 def l2_distance_batch(query: np.ndarray, matrix: np.ndarray) -> np.ndarray:
-    """Return the Euclidean distance from `query` to every row of `matrix`."""
+    """return the Euclidean distance from `query` to every row of `matrix`"""
     # reusing buffers keeps timing stable and is faster
     rows = len(matrix)
     if rows == 0:
@@ -54,14 +54,14 @@ def l2_distance_batch(query: np.ndarray, matrix: np.ndarray) -> np.ndarray:
 
 
 def l2_distance_matrix(queries: np.ndarray, matrix: np.ndarray) -> np.ndarray:
-    """Distances between every query and every row."""
+    """distances between every query and every row"""
     from scipy.spatial.distance import cdist
 
     return cdist(queries, matrix, metric="euclidean")
 
 
 def nearest_k_indices(query: np.ndarray, matrix: np.ndarray, k: int) -> np.ndarray:
-    """Return the row indices of the `k` rows nearest to `query`, nearest first."""
+    """return the row indices of the `k` rows nearest to `query`, nearest first"""
     distances = l2_distance_batch(query, matrix)
 
     if k >= len(distances):
@@ -73,14 +73,14 @@ def nearest_k_indices(query: np.ndarray, matrix: np.ndarray, k: int) -> np.ndarr
 
 
 def compute_centroid(vectors: np.ndarray) -> np.ndarray:
-    """Return the mean of a non empty set of vectors."""
+    """return the mean of a non empty set of vectors"""
     if len(vectors) == 0:
         raise ValueError("Cannot compute centroid of empty vector set")
     return vectors.mean(axis=0)
 
 
 def normalize(v: np.ndarray) -> np.ndarray:
-    """Return `v` scaled to unit length, or a copy of `v` if its length is zero."""
+    """return `v` scaled to unit length, or a copy of `v` if its length is zero"""
     norm = np.linalg.norm(v)
     if norm == 0:
         return v.copy()

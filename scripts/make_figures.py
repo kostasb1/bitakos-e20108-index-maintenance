@@ -1,4 +1,4 @@
-"""The figures of the thesis, in English and Greek, written to scripts/figures."""
+"""the figures of the thesis, in English and Greek, written to scripts/figures"""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ OUT.mkdir(exist_ok=True)
 CAL = yaml.safe_load((ROOT / "results/cost_model/query_cost_calibration.yaml").read_text())
 
 def decimal(lang, text):
-    """Write a decimal with a comma in the Greek figures, as the Greek text does."""
+    """write a decimal with a comma in the Greek figures, as the Greek text does"""
     return text.replace(".", ",") if lang == "el" else text
 
 
@@ -63,7 +63,7 @@ TEXT = {
 
 
 def fig_ivf(lang):
-    """Draw a small 2-D IVF example."""
+    """draw a small 2-D IVF example"""
     t = TEXT[lang]
     rng = np.random.default_rng(3)
     centres = np.array([[1, 1], [4, 1.2], [2.5, 3.6], [5.6, 3.4], [0.8, 4.2], [4.2, 5.4]])
@@ -96,7 +96,7 @@ def fig_ivf(lang):
 
 
 def fig_pipeline(lang):
-    """Draw the pipeline of one experiment, from the dataset to the scoring."""
+    """draw the pipeline of one experiment, from the dataset to the scoring"""
     t = TEXT[lang]
     # two rows so the Greek labels fit
     fig, ax = plt.subplots(figsize=(6.6, 3.3))
@@ -129,7 +129,7 @@ def fig_pipeline(lang):
 
 
 def fig_retention(lang):
-    """Draw the retention window, each batch expiring 50 time steps after it arrives."""
+    """draw the retention window, each batch expiring 50 time steps after it arrives"""
     t = TEXT[lang]
     fig, ax = plt.subplots(figsize=(6.4, 3.0))
     # starting index expires over the first 50 steps
@@ -155,7 +155,7 @@ def fig_retention(lang):
 
 
 def fig_list_price(lang):
-    """Plot the Faiss price per vector against list length, for both datasets."""
+    """plot the Faiss price per vector against list length, for both datasets"""
     t = TEXT[lang]
     fig, ax = plt.subplots(figsize=(6.2, 3.6))
     for dim, name, mk, ls in ((128, "SIFT1M, 128", "o", "-"), (960, "GIST1M, 960", "s", "--")):
@@ -180,7 +180,7 @@ def fig_list_price(lang):
 
 
 def fig_quake_threshold(lang):
-    """Plot the smallest access fraction at which Quake splits."""
+    """plot the smallest access fraction at which Quake splits"""
     t = TEXT[lang]
     fig, ax = plt.subplots(figsize=(6.2, 3.8))
     sizes = np.arange(100, 1601, 10)
@@ -233,7 +233,7 @@ RTEXT = {
 
 
 def runs(sweep, tag):
-    """Read the result rows and add the change against no maintenance."""
+    """read the result rows and add the change against no maintenance"""
     import pandas as pd
     d = pd.concat([pd.read_csv(f) for f in sorted((RAW / sweep).glob(f"{tag}_*.csv"))])
     base = d[d.maintainer == "no_op"].set_index("seed").query_cost
@@ -242,13 +242,13 @@ def runs(sweep, tag):
 
 
 def summary(sweep_dir, dataset):
-    """Read the ranking table that scripts/analyse_final.py wrote for one dataset."""
+    """read the ranking table that scripts/analyse_final.py wrote for one dataset"""
     import pandas as pd
     return pd.read_csv(ROOT / "results" / sweep_dir / f"ranking_{dataset}.csv", index_col=0)
 
 
 def _dotpanel(ax, series, lang, show_labels):
-    """Draw one panel of per-seed dots and means."""
+    """draw one panel of per-seed dots and means"""
     # series holds rows, summary, marker, fill, offset and label
     ys = {m: i for i, m in enumerate(ORDER[::-1])}
     for d, s, mk, face, off, lab in series:
@@ -269,7 +269,7 @@ def _dotpanel(ax, series, lang, show_labels):
 
 
 def fig_results_change(lang):
-    """Plot the change in query cost against no maintenance."""
+    """plot the change in query cost against no maintenance"""
     t = RTEXT[lang]
     sift, sift_h, gist = runs("final_2709", "sift"), runs("sens_ta50_2709", "sift"), runs("final_2709", "gist")
     s_sift, s_half = summary("final_2709", "sift1m"), summary("sens_ta50_2709", "sift1m")
@@ -289,7 +289,7 @@ def fig_results_change(lang):
 
 
 def fig_results_frontier(lang):
-    """Plot the change in query cost against maintenance work, per seed and on average."""
+    """plot the change in query cost against maintenance work, per seed and on average"""
     t = RTEXT[lang]
     fig, axes = plt.subplots(1, 2, figsize=(7.0, 3.6))
     marks = dict(zip(ORDER, ["o", "s", "^", "v", "D", "P", "X", "*"], strict=True))
@@ -313,7 +313,7 @@ def fig_results_frontier(lang):
 
 
 def fig_k_curve(lang):
-    """Plot query cost of fresh builds against partition count."""
+    """plot query cost of fresh builds against partition count"""
     import pandas as pd
     t = RTEXT[lang]
     fig, ax = plt.subplots(figsize=(6.2, 3.6))

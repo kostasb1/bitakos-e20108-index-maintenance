@@ -1,4 +1,4 @@
-"""The periodic rebuild baseline of Ada-IVF, section 5.1."""
+"""the periodic rebuild baseline of Ada-IVF, section 5.1"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from src.types import MaintenanceReport
 
 
 class GlobalRebuildMaintainer(Maintainer):
-    """Rebuild the whole index after a share of the vectors changes."""
+    """rebuild the whole index after a share of the vectors changes"""
 
     name = "global_rebuild"
 
@@ -22,7 +22,7 @@ class GlobalRebuildMaintainer(Maintainer):
         check_interval: int = MAINTENANCE_CHECK_INTERVAL,
         seed: int = 42,
     ) -> None:
-        """Create the policy, optionally with a fixed partition count."""
+        """create the policy, optionally with a fixed partition count"""
         super().__init__(check_interval=check_interval)
         self.rebuild_fraction = rebuild_fraction
         self.n_partitions = n_partitions
@@ -30,12 +30,12 @@ class GlobalRebuildMaintainer(Maintainer):
         self._last_rebuild_total: int = 0
 
     def start(self, index: IVFIndex, step: int) -> None:
-        """Start counting updates from the start of the stream."""
+        """start counting updates from the start of the stream"""
         super().start(index, step)
         self._last_rebuild_total = index._total_inserts + index._total_deletes
 
     def should_maintain(self, index: IVFIndex, step: int) -> bool:
-        """Rebuild once enough of the vectors have changed."""
+        """rebuild once enough of the vectors have changed"""
         total_modifications = index._total_inserts + index._total_deletes
         mods_since_rebuild = total_modifications - self._last_rebuild_total
         live_count = max(1, len(index.vector_to_partition))
@@ -43,7 +43,7 @@ class GlobalRebuildMaintainer(Maintainer):
         return mods_since_rebuild >= threshold
 
     def maintain(self, index: IVFIndex) -> MaintenanceReport:
-        """Rebuild the index from its live vectors with exact k-means."""
+        """rebuild the index from its live vectors with exact k-means"""
         all_ids: list[int] = []
         all_vecs: list[np.ndarray] = []
         for p in index.partitions.values():

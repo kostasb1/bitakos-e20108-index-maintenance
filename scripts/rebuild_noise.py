@@ -1,4 +1,4 @@
-"""How much of the query cost spread comes from the queries and how much from the build."""
+"""how much of the query cost spread comes from the queries and how much from the build"""
 from __future__ import annotations
 
 import os
@@ -28,25 +28,25 @@ from src.stream import run_stream, split_query_pools  # noqa: E402
 
 
 def score(index: IVFIndex, q: np.ndarray) -> tuple[float, float]:
-    """Return the query cost at recall 0.9 and its nprobe."""
+    """return the query cost at recall 0.9 and its nprobe"""
     _, npr, _, _ = cost_at_target_recall(index, q, DEFAULT_K, 0.9)
     return query_cost(priced_cost_at(index, q, npr), len(index.partitions), index.dim), float(npr)
 
 
 def spread(x) -> float:
-    """Return the largest value over the smallest, minus one, in percent."""
+    """return the largest value over the smallest, minus one, in percent"""
     x = np.asarray(x, dtype=float)
     return 100 * (x.max() / x.min() - 1)
 
 
 def cv(x) -> float:
-    """Coefficient of variation, in percent."""
+    """coefficient of variation, in percent"""
     x = np.asarray(x, dtype=float)
     return 100 * x.std(ddof=1) / x.mean()
 
 
 def main() -> None:
-    """Run the no maintenance stream, then score repeated builds of its end state."""
+    """run the no maintenance stream, then score repeated builds of its end state"""
     p = argparse.ArgumentParser()
     p.add_argument("--dataset", choices=["sift1m", "gist1m"], default="sift1m")
     p.add_argument("--seed", type=int, default=42)

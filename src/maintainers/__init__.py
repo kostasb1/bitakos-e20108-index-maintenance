@@ -1,4 +1,4 @@
-"""The maintenance policies."""
+"""the maintenance policies"""
 
 from src.maintainers.bandit import BanditMaintainer
 from src.maintainers.base import Maintainer

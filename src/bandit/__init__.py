@@ -1,4 +1,4 @@
-"""Parts of the bandit policy."""
+"""parts of the bandit policy"""
 
 from src.bandit.context import CONTEXT_DIM, extract_context
 from src.bandit.linucb import LinUCBAgent

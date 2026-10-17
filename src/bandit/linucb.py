@@ -1,4 +1,4 @@
-"""The LinUCB learners of the bandit policy."""
+"""the LinUCB learners of the bandit policy"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import numpy as np
 
 
 class LinUCBAgent:
-    """LinUCB with discounted updates (D-LinUCB)."""
+    """LinUCB with discounted updates (D-LinUCB)"""
 
     def __init__(
         self,
@@ -15,7 +15,7 @@ class LinUCBAgent:
         alpha: float = 1.0,
         discount: float = 0.99,
     ) -> None:
-        """Create a learner with `n_arms` actions."""
+        """create a learner with `n_arms` actions"""
         self.n_arms = n_arms
         self.context_dim = context_dim
         self.alpha = alpha
@@ -27,7 +27,7 @@ class LinUCBAgent:
         self._update_count: int = 0
 
     def scores(self, context: np.ndarray) -> np.ndarray:
-        """Return the upper confidence score of every action for `context`."""
+        """return the upper confidence score of every action for `context`"""
         x = context.astype(np.float64)
         eye = np.eye(self.context_dim, dtype=np.float64)
         out = np.empty(self.n_arms, dtype=np.float64)
@@ -41,7 +41,7 @@ class LinUCBAgent:
         return out
 
     def select_arm(self, context: np.ndarray, available: list[int] | None = None) -> int:
-        """Action with the highest score."""
+        """action with the highest score"""
         s = self.scores(context)
         if available is not None:
             if not available:
@@ -50,7 +50,7 @@ class LinUCBAgent:
         return int(np.argmax(s))
 
     def update(self, arm: int, context: np.ndarray, reward: float) -> None:
-        """Learn the reward of one action, discounting that action's past evidence first."""
+        """learn the reward of one action, discounting that action's past evidence first"""
         x = context.astype(np.float64)
         eye = np.eye(self.context_dim, dtype=np.float64)
         xx = np.outer(x, x)
@@ -62,11 +62,11 @@ class LinUCBAgent:
 
     @property
     def total_updates(self) -> int:
-        """The number of updates made so far."""
+        """the number of updates made so far"""
         return self._update_count
 
     def theta(self, arm: int) -> np.ndarray:
-        """Return the current estimate of an action's weight vector."""
+        """return the current estimate of an action's weight vector"""
         a_inv = np.linalg.solve(self.A[arm], np.eye(self.context_dim, dtype=np.float64))
         return a_inv @ self.b[arm]
 
@@ -76,7 +76,7 @@ ARROW_LAMBDAS: tuple[float, ...] = (0.0, 0.01, 0.03, 0.1, 0.3, 0.5, 0.7, 1.0)
 
 
 class WarmLinUCB:
-    """LinUCB with an optional warm start."""
+    """LinUCB with an optional warm start"""
 
     def __init__(
         self,
@@ -87,7 +87,7 @@ class WarmLinUCB:
         discount_mode: str = "pass",
         lambdas: tuple[float, ...] = (1.0,),
     ) -> None:
-        """Create a learner with `n_arms` actions."""
+        """create a learner with `n_arms` actions"""
         if discount_mode not in ("arm", "pass"):
             raise ValueError(discount_mode)
         self.n_arms = n_arms
@@ -109,16 +109,16 @@ class WarmLinUCB:
 
     @property
     def lam(self) -> float:
-        """The weight on real feedback currently in use."""
+        """the weight on real feedback currently in use"""
         return self.lambdas[self.sel]
 
     @property
     def total_updates(self) -> int:
-        """The number of real outcomes learned so far."""
+        """the number of real outcomes learned so far"""
         return self._update_count
 
     def add_warm(self, arm: int, contexts: np.ndarray, rewards: np.ndarray) -> None:
-        """Add warm start examples for an action."""
+        """add warm start examples for an action"""
         x = np.asarray(contexts, dtype=np.float64)
         r = np.asarray(rewards, dtype=np.float64)
         if len(x) == 0:
@@ -130,7 +130,7 @@ class WarmLinUCB:
         self.warm_samples += len(x)
 
     def _model(self, arm: int, lam: float):
-        """Return V, Vt and b of an action for the weight `lam`."""
+        """return V, vt and b of an action for the weight `lam`"""
         eye = np.eye(self.context_dim)
         v = eye + (1.0 - lam) * self.S[arm] + lam * self.G[arm]
         vt = eye + (1.0 - lam) ** 2 * self.S2[arm] + lam ** 2 * self.G2[arm]
@@ -138,12 +138,12 @@ class WarmLinUCB:
         return v, vt, b
 
     def theta(self, arm: int, lam: float | None = None) -> np.ndarray:
-        """Return the weight vector estimate of an action, for `lam` or the current weight."""
+        """return the weight vector estimate of an action, for `lam` or the current weight"""
         v, _, b = self._model(arm, self.lam if lam is None else lam)
         return np.linalg.solve(v, b)
 
     def scores(self, context: np.ndarray) -> np.ndarray:
-        """Return the upper confidence score of every action for `context`."""
+        """return the upper confidence score of every action for `context`"""
         x = context.astype(np.float64)
         out = np.empty(self.n_arms)
         for a in range(self.n_arms):
@@ -154,7 +154,7 @@ class WarmLinUCB:
         return out
 
     def select_arm(self, context: np.ndarray, available: list[int] | None = None) -> int:
-        """Action with the highest score."""
+        """action with the highest score"""
         s = self.scores(context)
         if available is not None:
             if not available:
@@ -163,7 +163,7 @@ class WarmLinUCB:
         return int(np.argmax(s))
 
     def update(self, arm: int, context: np.ndarray, reward: float) -> None:
-        """Learn the observed reward of one action in one context."""
+        """learn the observed reward of one action in one context"""
         x = context.astype(np.float64)
         if len(self.lambdas) > 1:
             for i, lam in enumerate(self.lambdas):
@@ -184,7 +184,7 @@ class WarmLinUCB:
         self._update_count += 1
 
     def end_of_pass(self) -> None:
-        """Discount the evidence of every action once, at the end of a maintenance pass."""
+        """discount the evidence of every action once, at the end of a maintenance pass"""
         if self.discount_mode != "pass":
             return
         g = self.discount

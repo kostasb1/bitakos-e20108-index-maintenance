@@ -1,4 +1,4 @@
-"""The scan cost curve lambda(s) that the Quake and bandit policies decide with."""
+"""the scan cost curve lambda(s) that the Quake and bandit policies decide with"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def benchmark_partition_scan(
     n_trials: int = 20,
     seed: int = 42,
 ) -> pd.DataFrame:
-    """Time the partition scan on random partitions of each size."""
+    """time the partition scan on random partitions of each size"""
     if sizes is None:
         sizes = [50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000]
 
@@ -45,7 +45,7 @@ def benchmark_partition_scan(
 
 
 def fit_cost_model(timings_df: pd.DataFrame) -> CostModel:
-    """Fit latency as alpha times size. Not used in the reported runs."""
+    """fit latency as alpha times size, not used in the reported runs"""
     x_feat = timings_df[["size"]].values
     y = timings_df["wall_time_ns"].values
 
@@ -68,7 +68,7 @@ def fit_cost_model(timings_df: pd.DataFrame) -> CostModel:
 
 @dataclass
 class ProfiledCostModel:
-    """lambda(s) as a table of measured points, interpolated."""
+    """lambda(s) as a table of measured points, interpolated"""
 
     sizes: np.ndarray
     latencies: np.ndarray
@@ -83,7 +83,7 @@ class ProfiledCostModel:
     centroid_ns: float = 0.0
 
     def _raw(self, s: float) -> float:
-        """Measured curve at size `s`, extended past the last point."""
+        """measured curve at size `s`, extended past the last point"""
         if s >= self.sizes[-1]:
             slope = ((self.latencies[-1] - self.latencies[-2])
                      / (self.sizes[-1] - self.sizes[-2]))
@@ -91,7 +91,7 @@ class ProfiledCostModel:
         return float(np.interp(s, self.sizes, self.latencies))
 
     def scan_latency(self, size: int) -> float:
-        """Return lambda(size), the cost of scanning one partition of `size` vectors."""
+        """return lambda(size), the cost of scanning one partition of `size` vectors"""
         s = float(max(0, size))
         if s <= self.sizes[0]:
             first = float(self.latencies[0]) - self.dispatch_ns
@@ -102,7 +102,7 @@ class ProfiledCostModel:
         return base + (self.probe_ns if s > 0 else 0.0)
 
     def centroid_latency(self, n_centroids: int) -> float:
-        """Return lambda_c(K), the cost of comparing a query with `n_centroids` centroids."""
+        """return lambda_c(K), the cost of comparing a query with `n_centroids` centroids"""
         s = float(max(0, n_centroids))
         if self.centroid_ns > 0.0:
             return self.centroid_ns * s
@@ -114,11 +114,11 @@ class ProfiledCostModel:
         return self.centroid_ratio * base
 
     def predict_latency(self, size: int, drift: float = 0.0, access: int = 0) -> float:
-        """Scan cost of a partition of `size` vectors."""
+        """scan cost of a partition of `size` vectors"""
         return self.scan_latency(size)
 
     def to_dict(self) -> dict:
-        """Return the model as a dictionary for storing in YAML."""
+        """return the model as a dictionary for storing in YAML"""
         return {
             "sizes":       [float(s) for s in self.sizes],
             "latencies":   [float(v) for v in self.latencies],
@@ -131,7 +131,7 @@ class ProfiledCostModel:
 
     @classmethod
     def from_dict(cls, payload: dict) -> ProfiledCostModel:
-        """Build a model from a dictionary, with defaults for any missing term."""
+        """build a model from a dictionary, with defaults for any missing term"""
         return cls(
             sizes=np.asarray(payload["sizes"], dtype=float),
             latencies=np.asarray(payload["latencies"], dtype=float),
@@ -144,7 +144,7 @@ class ProfiledCostModel:
 
 
 def lambda_from_prices(entry: dict) -> ProfiledCostModel:
-    """Build lambda(s) as the Faiss time to open and scan a list of s vectors."""
+    """build lambda(s) as the Faiss time to open and scan a list of s vectors"""
     unit = float(entry["ns_per_vector_faiss"])
     return ProfiledCostModel(
         sizes=np.asarray(entry["list_sizes"], dtype=float),
@@ -163,7 +163,7 @@ def profile_scan_latency(
     seed: int = 42,
     window_ns: float = 2e6,
 ) -> ProfiledCostModel:
-    """Measure lambda(s) of the Python scan. Not used by the reported runs."""
+    """measure lambda(s) of the Python scan, not used by the reported runs"""
     if sizes is None:
         sizes = [25, 50, 100, 200, 400, 800, 1600, 3200, 6400]
 
@@ -182,7 +182,7 @@ def _min_batched_scan_ns(
     rng: np.random.Generator, size: int, dim: int,
     n_trials: int, inner: int | None, window_ns: float,
 ) -> float:
-    """Fastest mean scan time for one size."""
+    """fastest mean scan time for one size"""
     import time
 
     matrix = rng.random((size, dim), dtype=np.float32)
@@ -213,7 +213,7 @@ def profile_dispatch_ns(
     window_ns: float = 2e6,
     reference_size: int = 25,
 ) -> float:
-    """Measure the part of one scan call that does not depend on the number of vectors."""
+    """measure the part of one scan call that does not depend on the number of vectors"""
     rng = np.random.default_rng(seed + 1)
     one = _min_batched_scan_ns(rng, 1, dim, n_trials, None, window_ns)
     ref = _min_batched_scan_ns(rng, reference_size, dim, n_trials, None, window_ns)
@@ -222,7 +222,7 @@ def profile_dispatch_ns(
 
 
 def fit_profiled_cost_model(timings_df: pd.DataFrame) -> ProfiledCostModel:
-    """Build lambda(s) from benchmark timings, the median time at each size."""
+    """build lambda(s) from benchmark timings, the median time at each size"""
     g = timings_df.groupby("size")["wall_time_ns"].median().sort_index()
     return ProfiledCostModel(
         sizes=np.asarray(g.index, dtype=float),
@@ -238,7 +238,7 @@ def benchmark_cost_model_full(
     n_trials: int = 20,
     seed: int = 42,
 ) -> pd.DataFrame:
-    """Time the scan while varying drift and access. Not used in the reported runs."""
+    """time the scan while varying drift and access, not used in the reported runs"""
     import time
 
     if sizes is None:
@@ -280,7 +280,7 @@ def benchmark_cost_model_full(
 
 
 def fit_cost_model_full(timings_df: pd.DataFrame) -> tuple[CostModel, dict]:
-    """Fit latency on size, drift and access. Not used in the reported runs."""
+    """fit latency on size, drift and access, not used in the reported runs"""
     from scipy import stats
 
     feature_names = ["size", "drift", "access"]
@@ -336,7 +336,7 @@ def fit_cost_model_full(timings_df: pd.DataFrame) -> tuple[CostModel, dict]:
 
 
 def save_cost_model(model: CostModel, path: Path) -> None:
-    """Write a linear cost model and a description of the machine to a YAML file."""
+    """write a linear cost model and a description of the machine to a YAML file"""
     payload = {
         "model": model.to_dict(),
         "machine_info": _machine_info(),
@@ -346,13 +346,13 @@ def save_cost_model(model: CostModel, path: Path) -> None:
 
 
 def load_cost_model(path: Path) -> CostModel:
-    """Read a linear cost model from a YAML file."""
+    """read a linear cost model from a YAML file"""
     payload = yaml.safe_load(path.read_text())
     return CostModel.from_dict(payload["model"])
 
 
 def save_profiled_cost_model(model: ProfiledCostModel, path: Path) -> None:
-    """Write a scan cost curve to YAML."""
+    """write a scan cost curve to YAML"""
     payload = {
         "model": model.to_dict(),
         "machine_info": _machine_info(),
@@ -362,13 +362,13 @@ def save_profiled_cost_model(model: ProfiledCostModel, path: Path) -> None:
 
 
 def load_profiled_cost_model(path: Path) -> ProfiledCostModel:
-    """Read a scan cost curve from a YAML file."""
+    """read a scan cost curve from a YAML file"""
     payload = yaml.safe_load(path.read_text())
     return ProfiledCostModel.from_dict(payload["model"])
 
 
 def _machine_info() -> dict[str, str]:
-    """Platform and library versions."""
+    """platform and library versions"""
     import platform
 
     return {

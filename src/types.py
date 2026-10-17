@@ -1,4 +1,4 @@
-"""Plain data records shared across the code."""
+"""plain data records shared across the code"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import yaml
 
 @dataclass
 class PartitionStats:
-    """A summary of one partition, its live size, tombstones, drift and access count."""
+    """a summary of one partition, its live size, tombstones, drift and access count"""
 
     partition_id: int
     size: int
@@ -23,7 +23,7 @@ class PartitionStats:
 
 @dataclass
 class IndexStats:
-    """A summary of the whole index, its sizes, drift and size imbalance."""
+    """a summary of the whole index, its sizes, drift and size imbalance"""
 
     num_partitions: int
     total_vectors: int
@@ -39,7 +39,7 @@ class IndexStats:
 
 @dataclass
 class MaintenanceReport:
-    """What one maintenance pass did, as counts of actions and of the work they took."""
+    """what one maintenance pass did, as counts of actions and of the work they took"""
 
     triggered: bool = False
     num_splits: int = 0
@@ -73,7 +73,7 @@ class MaintenanceReport:
 
 @dataclass
 class QualityReport:
-    """Partition quality over the whole index, its mean, spread and worst partition."""
+    """partition quality over the whole index, its mean, spread and worst partition"""
 
     mean_quality: float
     std_quality: float
@@ -84,7 +84,7 @@ class QualityReport:
 
 @dataclass
 class CostModel:
-    """Linear latency model."""
+    """linear latency model"""
 
     alpha: float
     beta: float
@@ -93,20 +93,20 @@ class CostModel:
     r_squared: float
 
     def predict_latency(self, size: int, drift: float = 0.0, access: int = 0) -> float:
-        """Return the predicted latency, never below zero."""
+        """return the predicted latency, never below zero"""
         raw = self.alpha * size + self.beta * drift + self.gamma * access + self.intercept
         return max(0.0, raw)
 
     def scan_latency(self, size: int) -> float:
-        """lambda(s), the cost of scanning a partition of `size` vectors."""
+        """lambda(s), the cost of scanning a partition of `size` vectors"""
         return self.predict_latency(size=size)
 
     def centroid_latency(self, n_centroids: int) -> float:
-        """Return the cost of comparing a query with `n_centroids` centroids."""
+        """return the cost of comparing a query with `n_centroids` centroids"""
         return self.predict_latency(size=n_centroids)
 
     def to_dict(self) -> dict[str, float]:
-        """Return the coefficients as a dictionary."""
+        """return the coefficients as a dictionary"""
         return {
             "alpha": self.alpha,
             "beta": self.beta,
@@ -117,13 +117,13 @@ class CostModel:
 
     @classmethod
     def from_dict(cls, data: dict[str, float]) -> CostModel:
-        """Build a model from a dictionary of coefficients."""
+        """build a model from a dictionary of coefficients"""
         return cls(**data)
 
 
 @dataclass
 class ExperimentConfig:
-    """Old experiment settings, not used."""
+    """old experiment settings, not used"""
 
     dataset_name: str
     n_vectors: int
@@ -140,11 +140,11 @@ class ExperimentConfig:
     extra: dict[str, Any] = field(default_factory=dict)
 
     def to_yaml(self, path: Path) -> None:
-        """Write the configuration to a YAML file."""
+        """write the configuration to a YAML file"""
         path.write_text(yaml.safe_dump(self.__dict__, sort_keys=False))
 
     @classmethod
     def from_yaml(cls, path: Path) -> ExperimentConfig:
-        """Read a configuration from a YAML file."""
+        """read a configuration from a YAML file"""
         data = yaml.safe_load(path.read_text())
         return cls(**data)

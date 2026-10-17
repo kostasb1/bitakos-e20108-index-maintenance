@@ -1,4 +1,4 @@
-"""Grow the starting index under LIRE."""
+"""grow the starting index under LIRE"""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ WORKLOAD_LABEL_CACHE_DIR: Path = DATA_DIR / "workload_labels"
 def workload_labels(
     vectors: np.ndarray, n_clusters: int = N_WORKLOAD_CLUSTERS, seed: int = 42
 ) -> np.ndarray:
-    """Assign every vector to a workload cluster, cached on disk."""
+    """assign every vector to a workload cluster, cached on disk"""
     WORKLOAD_LABEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache = (WORKLOAD_LABEL_CACHE_DIR /
              f"labels_{len(vectors)}_{vectors.shape[1]}_c{n_clusters}_s{seed}.npy")
@@ -53,7 +53,7 @@ def clustered_runbook(
     alpha: tuple[float, ...] = (100.0, 15.0, 10.0, 5.0, 3.0),
     delete_fraction: tuple[float, float] = (0.5, 0.9),
 ) -> list[tuple[str, int, int]]:
-    """Return the Big ANN clustered arrival schedule as a list of batches."""
+    """return the Big ANN clustered arrival schedule as a list of batches"""
     n_clusters = len(spare_per_cluster)
     if n_clusters == 0 or n_inserts <= 0:
         return []
@@ -82,7 +82,7 @@ def clustered_runbook(
 
 @dataclass
 class Staple:
-    """A grown starting index and what the stream needs from it."""
+    """a grown starting index and what the stream needs from it"""
 
     index: IVFIndex
     hi: int
@@ -101,11 +101,11 @@ class Staple:
     consumed: set[int] = field(default_factory=set)
 
     def sizes(self) -> np.ndarray:
-        """Return the live size of every partition of the grown index."""
+        """return the live size of every partition of the grown index"""
         return np.array([p.size() for p in self.index.partitions.values()])
 
     def surviving_ids(self) -> list[int]:
-        """Return the ids of the live vectors, oldest first."""
+        """return the ids of the live vectors, oldest first"""
         return [v for i, v in enumerate(self.age_ids) if self.alive[i]]
 
 
@@ -120,7 +120,7 @@ def grow_staple(
     seed: int = 42,
     n_clusters: int = N_WORKLOAD_CLUSTERS,
 ) -> Staple:
-    """Grow an index from a small k-means start to `cap` live vectors under LIRE."""
+    """grow an index from a small k-means start to `cap` live vectors under LIRE"""
     rng = np.random.default_rng(seed)
     members: dict[int, np.ndarray] = {}
     for c in range(n_clusters):
@@ -209,7 +209,7 @@ def grow_staple(
 def sliding_window_cohorts(
     staple: Staple, max_t: int
 ) -> dict[int, list[int]]:
-    """Expire the starting index over the first half of the stream."""
+    """expire the starting index over the first half of the stream"""
     surviving = staple.surviving_ids()
     w = max(1, max_t // 2)
     chunk = max(1, len(surviving) // w)

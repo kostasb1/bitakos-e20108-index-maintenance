@@ -1,4 +1,4 @@
-"""Download SIFT1M and GIST1M into data/."""
+"""download SIFT1M and GIST1M into data/"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ GIST1M_FTP = "ftp://ftp.irisa.fr/local/texmex/corpus/gist.tar.gz"
 
 
 def _download(url: str, dest: Path) -> None:
-    """Download `url` to the file `dest`, creating its folder if needed."""
+    """download `url` to the file `dest`, creating its folder if needed"""
     print(f"Downloading {url} to {dest} ...")
     dest.parent.mkdir(parents=True, exist_ok=True)
     with urllib.request.urlopen(url) as resp, open(dest, "wb") as f:
@@ -28,7 +28,7 @@ def _download(url: str, dest: Path) -> None:
 
 
 def download_sift1m(data_dir: Path) -> None:
-    """Download SIFT1M."""
+    """download SIFT1M"""
     sift_dir = data_dir / "sift"
     if (sift_dir / "sift_base.fvecs").exists():
         print("SIFT1M already present; skipping.")
@@ -51,7 +51,7 @@ def download_sift1m(data_dir: Path) -> None:
 
 
 def download_gist1m(data_dir: Path) -> None:
-    """Download GIST1M into `data_dir`/gist from the FTP archive."""
+    """download GIST1M into `data_dir`/gist from the FTP archive"""
     gist_dir = data_dir / "gist"
     if (gist_dir / "gist_base.fvecs").exists():
         print("GIST1M already present; skipping.")
@@ -64,7 +64,7 @@ def download_gist1m(data_dir: Path) -> None:
 
 
 def main() -> None:
-    """Parse the arguments and download the requested datasets."""
+    """parse the arguments and download the requested datasets"""
     parser = argparse.ArgumentParser(description="Download ANN benchmark datasets")
     parser.add_argument(
         "--dataset", choices=["sift1m", "gist1m", "all"], default="sift1m"

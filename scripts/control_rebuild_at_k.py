@@ -1,4 +1,4 @@
-"""Control run, global rebuild at the bandit's final partition count."""
+"""control run, global rebuild at the bandit's final partition count"""
 from __future__ import annotations
 
 import os
@@ -24,7 +24,7 @@ OUT = RESULTS_DIR / "control_2809"
 
 
 def bandit_k(dataset: str) -> dict[int, int]:
-    """Return the bandit's final partition count for each seed, from the main results."""
+    """return the bandit's final partition count for each seed, from the main results"""
     prefix = "sift" if dataset == "sift1m" else "gist"
     d = pd.concat([pd.read_csv(p) for p in SWEEP.glob(f"{prefix}_s*.csv")])
     b = d[d.maintainer == "bandit"]
@@ -32,7 +32,7 @@ def bandit_k(dataset: str) -> dict[int, int]:
 
 
 def main() -> None:
-    """Run the control for the given seeds through final_sweep."""
+    """run the control for the given seeds through final_sweep"""
     args = sys.argv[1:]
     dataset = args[args.index("--dataset") + 1] if "--dataset" in args else "sift1m"
     seeds = [int(s) for s in args[args.index("--seeds") + 1:] if s.lstrip("-").isdigit()]
@@ -43,7 +43,7 @@ def main() -> None:
     orig = fs.build
 
     def build(name, seed, hi, lo, cost_model):
-        """Build the control policy, or any other as final_sweep does."""
+        """build the control policy, or any other as final_sweep does"""
         if name == NAME:
             return GlobalRebuildMaintainer(n_partitions=ks[seed], seed=seed)
         return orig(name, seed, hi, lo, cost_model)

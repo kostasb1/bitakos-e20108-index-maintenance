@@ -1,4 +1,4 @@
-"""Query cost of fresh builds at several partition counts."""
+"""query cost of fresh builds at several partition counts"""
 from __future__ import annotations
 
 import os
@@ -29,7 +29,7 @@ MULTIPLES = (1.0, 1.5, 2.0, 3.0, 4.5, 8.5)
 
 
 def main() -> None:
-    """Run the no maintenance stream, then score fresh builds at several K."""
+    """run the no maintenance stream, then score fresh builds at several K"""
     p = argparse.ArgumentParser()
     p.add_argument("--dataset", choices=["sift1m", "gist1m"], default="gist1m")
     p.add_argument("--seed", type=int, default=42)

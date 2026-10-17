@@ -1,4 +1,4 @@
-"""Measure alpha, the access share each half keeps after a split."""
+"""measure alpha, the access share each half keeps after a split"""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from src.maintainers.base import (  # noqa: E402
 
 
 def route_all(index: IVFIndex, queries: np.ndarray, nprobe: int) -> list[np.ndarray]:
-    """Probed partitions of every query."""
+    """probed partitions of every query"""
     matrix, order = index._get_centroid_matrix()
     order_arr = np.asarray(order)
 
@@ -47,7 +47,7 @@ def route_all(index: IVFIndex, queries: np.ndarray, nprobe: int) -> list[np.ndar
 
 
 def verify_router(index: IVFIndex, queries: np.ndarray, nprobe: int, n_check: int = 25) -> None:
-    """Check that `route_all` gives the same probe sets as the index itself."""
+    """check that `route_all` gives the same probe sets as the index itself"""
     probed = route_all(index, queries[:n_check], nprobe)
     for q, got in zip(queries[:n_check], probed, strict=True):
         want = set(index._nearest_partitions(q, nprobe))
@@ -55,7 +55,7 @@ def verify_router(index: IVFIndex, queries: np.ndarray, nprobe: int, n_check: in
 
 
 def access_counts(probe_sets: list[np.ndarray], n_queries: int) -> dict[int, float]:
-    """Return the share of queries that probe each partition, A in Quake equation 1."""
+    """return the share of queries that probe each partition, a in Quake equation 1"""
     counts: dict[int, int] = {}
     for row in probe_sets:
         for pid in row.tolist():
@@ -67,7 +67,7 @@ def build_query_pool(
     queries: np.ndarray, mode: str, seed: int, n_queries: int,
     hot_fraction: float, hot_prob: float,
 ) -> np.ndarray:
-    """Query pool, concentrated or uniform."""
+    """query pool, concentrated or uniform"""
     qrng = np.random.default_rng(seed + 7)
     if mode == "uniform":
         return queries[qrng.integers(0, len(queries), n_queries)]
@@ -86,7 +86,7 @@ def build_query_pool(
 
 
 def pick_candidates(index: IVFIndex, n_candidates: int, min_size: int) -> list[int]:
-    """Pick partitions across the size range."""
+    """pick partitions across the size range"""
     sized = sorted(
         ((pid, p.size()) for pid, p in index.partitions.items() if p.size() >= min_size),
         key=lambda t: t[1],
@@ -103,7 +103,7 @@ def measure_one(
     index: IVFIndex, pid: int, queries: np.ndarray, nprobe: int,
     before_probes: list[np.ndarray], seed: int, boundary_top_k: int,
 ) -> dict | None:
-    """Split one partition on a copy and measure its children's access."""
+    """split one partition on a copy and measure its children's access"""
     n_queries = len(queries)
     a_before = access_counts(before_probes, n_queries)
     parent_access = a_before.get(pid, 0.0)
@@ -150,7 +150,7 @@ def measure_one(
 
 
 def main() -> None:
-    """Build the index, split a range of partitions one at a time, and report alpha."""
+    """build the index, split a range of partitions one at a time, and report alpha"""
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dataset", default="sift1m", choices=["sift1m", "gist1m"])
     p.add_argument("--seed", type=int, default=42)

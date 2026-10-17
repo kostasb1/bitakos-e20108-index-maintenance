@@ -1,4 +1,4 @@
-"""The IVF index and the operations policies share."""
+"""the IVF index and the operations policies share"""
 
 from __future__ import annotations
 
@@ -19,10 +19,10 @@ ROUTING_CANDIDATE_MARGIN = 16
 
 
 class IVFIndex:
-    """An IVF index with partitions, centroids, routing and updates."""
+    """an IVF index with partitions, centroids, routing and updates"""
 
     def __init__(self, dim: int) -> None:
-        """Create an empty index for vectors of `dim` dimensions."""
+        """create an empty index for vectors of `dim` dimensions"""
         self.dim = dim
         self.partitions: dict[int, Partition] = {}
         self.vector_to_partition: dict[int, int] = {}
@@ -50,7 +50,7 @@ class IVFIndex:
         seed: int = 42,
         cache: bool = False,
     ) -> None:
-        """Partition `vectors` with exact k-means into `n_partitions` partitions."""
+        """partition `vectors` with exact k-means into `n_partitions` partitions"""
         assert vectors.shape[1] == self.dim, f"Expected dim={self.dim}, got {vectors.shape[1]}"
         assert vectors.dtype == np.float32, f"Expected float32, got {vectors.dtype}"
         assert len(vectors) == len(vector_ids)
@@ -77,7 +77,7 @@ class IVFIndex:
         self._invalidate_cache()
 
     def insert(self, vec_id: int, vec: np.ndarray) -> None:
-        """Add a vector to the partition with the nearest centroid."""
+        """add a vector to the partition with the nearest centroid"""
         if vec_id in self.vector_to_partition:
             raise KeyError(f"vec_id {vec_id} already present")
         pid = self._find_nearest_partition(vec)
@@ -86,7 +86,7 @@ class IVFIndex:
         self._total_inserts += 1
 
     def delete(self, vec_id: int) -> bool:
-        """Delete a vector by tombstoning it in its partition."""
+        """delete a vector by tombstoning it in its partition"""
         if vec_id not in self.vector_to_partition:
             return False
         pid = self.vector_to_partition[vec_id]
@@ -98,7 +98,7 @@ class IVFIndex:
     def search(
         self, query: np.ndarray, k: int, nprobe: int, record_access: bool = True
     ) -> list[tuple[int, float]]:
-        """Return the `k` nearest vectors found in the `nprobe` nearest partitions."""
+        """return the `k` nearest vectors found in the `nprobe` nearest partitions"""
         probed_pids = self._nearest_partitions(query, nprobe)
         if record_access:
             self.queries_routed += 1
@@ -138,7 +138,7 @@ class IVFIndex:
     def search_batch(
         self, queries: np.ndarray, k: int, nprobe: int, record_access: bool = True
     ) -> list[list[tuple[int, float]]]:
-        """Run `search` for every query and return the list of results."""
+        """run `search` for every query and return the list of results"""
         return [self.search(q, k, nprobe, record_access=record_access) for q in queries]
 
     def search_adaptive(
@@ -150,7 +150,7 @@ class IVFIndex:
         record_access: bool = False,
         radius_factor: float = 1.0,
     ) -> tuple[list[tuple[int, float]], int, int]:
-        """Search with a growing nprobe. Not used in the reported runs."""
+        """search with a growing nprobe, not used in the reported runs"""
         matrix, order = self._get_centroid_matrix()
         n_parts = len(order)
         if n_parts == 0:
@@ -202,7 +202,7 @@ class IVFIndex:
         return [(cand_vids[int(i)], float(all_d[i])) for i in pos], n_probed, vectors_scanned
 
     def stats(self) -> IndexStats:
-        """Return a summary of the index, sizes, drift and size imbalance."""
+        """return a summary of the index, sizes, drift and size imbalance"""
         sizes = [p.size() for p in self.partitions.values()]
         drifts = [p.centroid_drift() for p in self.partitions.values()]
         mean_size = float(np.mean(sizes)) if sizes else 0.0
@@ -220,15 +220,15 @@ class IVFIndex:
         )
 
     def partition_ids(self) -> list[int]:
-        """Return the ids of all partitions in ascending order."""
+        """return the ids of all partitions in ascending order"""
         return sorted(self.partitions.keys())
 
     def get_partition(self, pid: int) -> Partition:
-        """Return the partition with the given id."""
+        """return the partition with the given id"""
         return self.partitions[pid]
 
     def apply_split(self, pid: int, children: list[Partition]) -> None:
-        """Replace partition `pid` with `children`, which get new ids."""
+        """replace partition `pid` with `children`, which get new ids"""
         assert pid in self.partitions
         parent = self.partitions[pid]
         parent_access = parent.access_count
@@ -247,7 +247,7 @@ class IVFIndex:
         self._invalidate_cache()
 
     def apply_merge(self, pids: list[int], merged: Partition) -> None:
-        """Replace the partitions in `pids` with `merged`, which gets a new id."""
+        """replace the partitions in `pids` with `merged`, which gets a new id"""
         for pid in pids:
             assert pid in self.partitions, f"Missing partition {pid}"
             del self.partitions[pid]
@@ -264,7 +264,7 @@ class IVFIndex:
         self._invalidate_cache()
 
     def apply_reassign(self, vec_id: int, from_pid: int, to_pid: int) -> None:
-        """Move one vector from partition `from_pid` to partition `to_pid`."""
+        """move one vector from partition `from_pid` to partition `to_pid`"""
         assert from_pid in self.partitions and to_pid in self.partitions
         src = self.partitions[from_pid]
         dst = self.partitions[to_pid]
@@ -277,7 +277,7 @@ class IVFIndex:
         self.vector_to_partition[vec_id] = to_pid
 
     def recompute_centroid(self, pid: int) -> float:
-        """Move the centroid to the mean of its live vectors, return the drift closed."""
+        """move the centroid to the mean of its live vectors, return the drift closed"""
         p = self.partitions[pid]
         drift_before = p.centroid_drift()
         if p.size() > 0:
@@ -286,11 +286,11 @@ class IVFIndex:
         return drift_before
 
     def compact_partition(self, pid: int) -> int:
-        """Compact partition `pid` and return how many tombstoned vectors were removed."""
+        """compact partition `pid` and return how many tombstoned vectors were removed"""
         return self.partitions[pid].compact()
 
     def _prefilter(self, query: np.ndarray, k: int) -> np.ndarray:
-        """About `k` + 16 nearest centroids, unordered."""
+        """about `k` + 16 nearest centroids, unordered"""
         # float64 prefilter, the caller rescores in float32
         matrix64, sq_norms, order = self._get_centroid_matrix64()
         if k >= len(order):
@@ -302,13 +302,13 @@ class IVFIndex:
         return np.argpartition(scores, m - 1)[:m]
 
     def _exact_scores(self, rows: np.ndarray, query: np.ndarray) -> np.ndarray:
-        """Return the float32 squared distances from `query` to the centroids at `rows`."""
+        """return the float32 squared distances from `query` to the centroids at `rows`"""
         matrix, _ = self._get_centroid_matrix()
         diffs = matrix[rows] - query
         return np.einsum("ij,ij->i", diffs, diffs)
 
     def _nearest_partitions(self, query: np.ndarray, nprobe: int) -> list[int]:
-        """Ids of the `nprobe` nearest partitions, nearest first."""
+        """ids of the `nprobe` nearest partitions, nearest first"""
         _, order = self._get_centroid_matrix()
 
         n = min(nprobe, len(order))
@@ -324,13 +324,13 @@ class IVFIndex:
         return [int(pid) for pid in pids[np.lexsort((pids, exact[top]))]]
 
     def query_count(self, nprobe: int) -> float:
-        """Return the number of routed queries, the denominator of the access fraction."""
+        """return the number of routed queries, the denominator of the access fraction"""
         if self.queries_routed > 0:
             return self.queries_routed
         return sum(p.access_count for p in self.partitions.values()) / max(1, nprobe)
 
     def route(self, query: np.ndarray, nprobe: int) -> list[int]:
-        """Route a query from the stream, counting access on the probed partitions."""
+        """route a query from the stream, counting access on the probed partitions"""
         probed = self._nearest_partitions(query, nprobe)
         self.queries_routed += 1
         for pid in probed:
@@ -339,14 +339,14 @@ class IVFIndex:
         return probed
 
     def _find_nearest_partition(self, vec: np.ndarray) -> int:
-        """Return the id of the partition with the nearest centroid, used for inserts."""
+        """return the id of the partition with the nearest centroid, used for inserts"""
         _, order = self._get_centroid_matrix()
         cand = self._prefilter(vec, 1)
         exact = self._exact_scores(cand, vec)
         return order[int(cand[int(np.argmin(exact))])]
 
     def _get_centroid_matrix(self) -> tuple[np.ndarray, list[int]]:
-        """Return the float32 matrix of centroids and the partition id of each row."""
+        """return the float32 matrix of centroids and the partition id of each row"""
         if self._centroid_matrix is None or self._centroid_id_order is None:
             order = sorted(self.partitions.keys())
             matrix = np.vstack([self.partitions[pid].centroid for pid in order])
@@ -355,7 +355,7 @@ class IVFIndex:
         return self._centroid_matrix, self._centroid_id_order
 
     def _get_centroid_matrix64(self) -> tuple[np.ndarray, np.ndarray, list[int]]:
-        """Float64 centroid matrix, norms and ids."""
+        """float64 centroid matrix, norms and ids"""
         matrix, order = self._get_centroid_matrix()
         if self._centroid_matrix64 is None:
             self._centroid_matrix64 = matrix.astype(np.float64)
@@ -364,7 +364,7 @@ class IVFIndex:
         return self._centroid_matrix64, self._centroid_sq_norms, order
 
     def _invalidate_cache(self) -> None:
-        """Forget the cached centroid matrices."""
+        """forget the cached centroid matrices"""
         self._centroid_matrix = None
         self._centroid_id_order = None
         self._centroid_matrix64 = None
@@ -372,7 +372,7 @@ class IVFIndex:
 
 
 def _kmeans_cache_key(vectors: np.ndarray, n_partitions: int, seed: int) -> str:
-    """Return the file name key for a stored k-means result."""
+    """return the file name key for a stored k-means result"""
     import hashlib
     import os
 
@@ -392,7 +392,7 @@ def _kmeans_cache_key(vectors: np.ndarray, n_partitions: int, seed: int) -> str:
 def _lloyd_partition(
     vectors: np.ndarray, n_partitions: int, seed: int, cache: bool
 ) -> tuple[np.ndarray, np.ndarray, int]:
-    """Run exact k-means and return the labels, the centroids and the iteration count."""
+    """run exact k-means and return the labels, the centroids and the iteration count"""
     from sklearn.cluster import KMeans
 
     path = None

@@ -1,4 +1,4 @@
-"""One IVF partition, its vectors, its centroid and its access count."""
+"""one IVF partition, its vectors, its centroid and its access count"""
 
 from __future__ import annotations
 
@@ -9,10 +9,10 @@ from src.vector import compute_centroid, l2_distance
 
 
 class Partition:
-    """One partition, its vectors, tombstones, centroid and access count."""
+    """one partition, its vectors, tombstones, centroid and access count"""
 
     def __init__(self, partition_id: int, centroid: np.ndarray) -> None:
-        """Create an empty partition with the given id and centroid."""
+        """create an empty partition with the given id and centroid"""
         self.partition_id = partition_id
         self.centroid: np.ndarray = centroid.copy()
         self.vector_ids: list[int] = []
@@ -31,19 +31,19 @@ class Partition:
         self._radius: float = 0.0
 
     def size(self) -> int:
-        """Return the number of live vectors, stored vectors minus tombstones."""
+        """return the number of live vectors, stored vectors minus tombstones"""
         return len(self.vector_ids) - len(self.tombstones)
 
     def total_size(self) -> int:
-        """Return the number of stored vectors, tombstoned ones included."""
+        """return the number of stored vectors, tombstoned ones included"""
         return len(self.vector_ids)
 
     def is_empty(self) -> bool:
-        """Return True if the partition holds no live vector."""
+        """return True if the partition holds no live vector"""
         return self.size() == 0
 
     def _ensure_capacity(self, required: int) -> None:
-        """Grow the storage block so it holds at least `required` rows."""
+        """grow the storage block so it holds at least `required` rows"""
         if required <= self._buf.shape[0]:
             return
         new_cap = max(8, required, self._buf.shape[0] * 2)
@@ -52,12 +52,12 @@ class Partition:
         self._buf = grown
 
     def _invalidate_live(self) -> None:
-        """Forget the cached live rows and ids, after any change to the partition."""
+        """forget the cached live rows and ids, after any change to the partition"""
         self._live_rows = None
         self._live_ids = None
 
     def add(self, vec_id: int, vec: np.ndarray) -> None:
-        """Store a vector in the partition."""
+        """store a vector in the partition"""
         self._invalidate_live()
         if vec_id in self._id_to_pos:
             self._buf[self._id_to_pos[vec_id]] = vec
@@ -72,7 +72,7 @@ class Partition:
         self._dirty = True
 
     def mark_deleted(self, vec_id: int) -> None:
-        """Delete a vector by marking it with a tombstone."""
+        """delete a vector by marking it with a tombstone"""
         if vec_id not in self._id_to_pos:
             raise KeyError(f"vec_id {vec_id} not in partition {self.partition_id}")
         self.tombstones.add(vec_id)
@@ -80,11 +80,11 @@ class Partition:
         self._dirty = True
 
     def is_deleted(self, vec_id: int) -> bool:
-        """Return True if the vector is marked with a tombstone."""
+        """return True if the vector is marked with a tombstone"""
         return vec_id in self.tombstones
 
     def compact(self) -> int:
-        """Remove tombstoned vectors, return how many."""
+        """remove tombstoned vectors, return how many"""
         if not self.tombstones:
             return 0
         removed = len(self.tombstones)
@@ -103,7 +103,7 @@ class Partition:
         return removed
 
     def true_mean(self) -> np.ndarray:
-        """Return the mean of the live vectors, or the centroid if there are none."""
+        """return the mean of the live vectors, or the centroid if there are none"""
         if self._cached_true_mean is not None and not self._dirty:
             return self._cached_true_mean
 
@@ -117,20 +117,20 @@ class Partition:
         return self._cached_true_mean
 
     def centroid_drift(self) -> float:
-        """Return the distance between the centroid and the mean of the live vectors."""
+        """return the distance between the centroid and the mean of the live vectors"""
         if self.size() == 0:
             return 0.0
         return l2_distance(self.centroid, self.true_mean())
 
     def update_centroid(self, new_centroid: np.ndarray) -> None:
-        """Replace the centroid and recompute the radius around it."""
+        """replace the centroid and recompute the radius around it"""
         self.centroid = new_centroid.copy()
         if self.size() == 0:
             self._dirty = True
         self._recompute_radius()
 
     def _recompute_radius(self) -> None:
-        """Set the radius to the largest distance from the centroid to a live vector."""
+        """set the radius to the largest distance from the centroid to a live vector"""
         if self.size() == 0:
             self._radius = 0.0
             return
@@ -138,23 +138,23 @@ class Partition:
         self._radius = float(np.linalg.norm(live_vecs - self.centroid, axis=1).max())
 
     def radius(self) -> float:
-        """Return an upper bound on the distance from the centroid to any live vector."""
+        """return an upper bound on the distance from the centroid to any live vector"""
         return self._radius
 
     def record_access(self) -> None:
-        """Count one routed query that probed this partition."""
+        """count one routed query that probed this partition"""
         self.access_count += 1
 
     def decay_access(self, factor: float) -> None:
-        """Multiply the access count by `factor`, so older queries weigh less."""
+        """multiply the access count by `factor`, so older queries weigh less"""
         self.access_count *= factor
 
     def get_vector(self, vec_id: int) -> np.ndarray:
-        """Return the stored vector with the given id."""
+        """return the stored vector with the given id"""
         return self._buf[self._id_to_pos[vec_id]]
 
     def _live_block(self) -> tuple[np.ndarray, list[int]]:
-        """Return the live vectors and their ids, for the scan only."""
+        """return the live vectors and their ids, for the scan only"""
         if not self.tombstones:
             return self._buf[:self._n], self.vector_ids
         if self._live_rows is None:
@@ -167,7 +167,7 @@ class Partition:
         return self._buf[self._live_rows], self._live_ids
 
     def get_live_vectors(self) -> tuple[list[int], np.ndarray]:
-        """Ids and a copy of the live vectors."""
+        """ids and a copy of the live vectors"""
         if self.size() == 0:
             d = self.centroid.shape[0]
             return [], np.empty((0, d), dtype=self.centroid.dtype)
@@ -176,7 +176,7 @@ class Partition:
         return list(live_ids), rows.astype(self.centroid.dtype, copy=True)
 
     def stats(self, quality: float = 0.0) -> PartitionStats:
-        """Return a summary of the partition, its sizes, drift and access count."""
+        """return a summary of the partition, its sizes, drift and access count"""
         return PartitionStats(
             partition_id=self.partition_id,
             size=self.size(),
@@ -187,7 +187,7 @@ class Partition:
         )
 
     def __repr__(self) -> str:
-        """Return a short description with the id, size, drift and access count."""
+        """return a short description with the id, size, drift and access count"""
         return (
             f"Partition(id={self.partition_id}, size={self.size()}, "
             f"drift={self.centroid_drift():.3f}, access={self.access_count})"
