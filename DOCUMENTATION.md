@@ -1,10 +1,8 @@
 # Documentation
 
-This file goes through the code one file at a time and says what each one does. The README says
-how to install it and how to rerun the experiments. Every function also has a short docstring in the
-code itself.
+This file goes through the codebase with a brief explanation of every code file,files are also commented.
 
-## How the pieces fit together
+## High level of the system
 
 One run takes one dataset, one seed and one maintenance policy. It grows a starting index of 50,000
 vectors, then plays a stream of 100 time steps in which new vectors arrive in one region of the data
@@ -14,7 +12,7 @@ maintain the index. The index is scored at the start, at time steps 25, 50 and 7
 nprobe that reaches recall 0.9 on held-out queries and price what such a query costs. The result is
 one row in a CSV file.
 
-The code is in two folders. `src/` holds the index, the policies and the scoring. `scripts/` holds
+The code is divided into two folders. `src/` holds the index, the policies and the scoring. `scripts/` holds
 the programs that run the experiments and turn the results into the tables and figures of the
 thesis.
 
