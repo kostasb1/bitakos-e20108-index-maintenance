@@ -1,6 +1,6 @@
 # Index maintenance for vector data
 
-The code of the bachelor thesis *Τεχνικές Συντήρησης Ευρετηρίων για Διανυσματικά Δεδομένα*, Konstantinos Bitakos, Department of Digital Systems, University of Piraeus, 2026.
+The codebase of the bachelor thesis *Τεχνικές Συντήρησης Ευρετηρίων για Διανυσματικά Δεδομένα*, Konstantinos Bitakos, Department of Digital Systems, University of Piraeus, 2026.
 
 The thesis compares ways of maintaining an IVF (inverted file) vector index while vectors are inserted and deleted. The code includes an IVF index, the maintenance policies of SPFresh, DeDrift and Quake, a periodic full rebuild, a contextual bandit policy, and a scoring procedure, all written in Python and NumPy. The scoring compares every policy at a fixed recall of 0.9, on queries no policy has seen, with query cost and maintenance work priced in one unit measured on Faiss.
 
